@@ -1,0 +1,26 @@
+{
+	"name": "youtube_downloader",
+	"private": true,
+	"workspaces": [
+		"apps/*"
+	],
+	"module": "index.ts",
+	"type": "module",
+	"scripts": {
+		"dev": "concurrently \"bun --filter web dev\" \"bun --filter server dev\"",
+		"dev:web": "bun --filter web dev",
+		"dev:server": "bun --filter server dev",
+		"build:web": "bun --filter web build",
+		"preview:web": "bun --filter web preview"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"concurrently": "^9.2.1"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"react-router-dom": "^7.15.1"
+	}
+}
