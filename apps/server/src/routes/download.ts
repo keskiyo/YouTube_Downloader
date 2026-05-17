@@ -1,12 +1,9 @@
-import { spawn } from 'child_process'
 import { Elysia } from 'elysia'
-import { existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { getPlatformFromUrl, parseUrl } from '../services/platform-parser'
-import { getVideoInfo } from '../services/video.service'
-import { contentDisposition } from '../utils/content-disposition'
-
-const TEMP_DIR = 'D:\\1NeiroSlop\\YouTube_Downloader\\apps\\downloads_files'
+import { parseUrl } from '../services/platform-parser'
+import { downloadSessionService } from '../services/download-session.service'
+import { downloadWithRetry } from '../services/yt-dlp.service'
+import { runFfprobe, applyFaststart } from '../services/ffmpeg.service'
 
 function logError(label: string, err: unknown) {
 	console.error(`[ERROR] ${label}:`, err)
@@ -15,163 +12,127 @@ function logError(label: string, err: unknown) {
 	}
 }
 
-async function downloadWithYtDlp(
-	url: string,
-	quality?: string,
-): Promise<{ path: string; quality: string } | null> {
-	return new Promise((resolve, reject) => {
-		if (!existsSync(TEMP_DIR)) {
-			mkdirSync(TEMP_DIR, { recursive: true })
-		}
+async function processDownload(sessionId: string, url: string, tempDir: string, quality?: string) {
+	console.log('========================================')
+	console.log('[processDownload] STARTED')
+	console.log('[processDownload] sessionId:', sessionId)
+	console.log('[processDownload] url:', url)
+	console.log('[processDownload] tempDir:', tempDir)
+	console.log('[processDownload] quality:', quality)
+	console.log('========================================')
+	
+	try {
+		downloadSessionService.updateStatus(sessionId, 'downloading')
+		console.log('[processDownload] Status set to: downloading')
 
-		const timestamp = Date.now()
-		const outputTemplate = join(
-			TEMP_DIR,
-			`video_${timestamp}_%(height)sp.%(ext)s`,
-		)
-
-		const args: string[] = []
-
-		if (quality && quality !== 'best') {
-			const qNum = parseInt(quality.replace('p', ''))
-			args.push(
-				'-f',
-				`bestvideo[height<=${qNum}]+bestaudio/best[height<=${qNum}]`,
-			)
-		} else {
-			args.push('-f', 'bestvideo+bestaudio/best')
-		}
-
-		args.push(
-			'--merge-output-format', 'mp4',
-			'--force-overwrites',
-			'--no-part',
-			'--newline',
-			'-o',
-			outputTemplate,
+		console.log('[processDownload] Calling downloadWithRetry...')
+		const ytResult = await downloadWithRetry(
 			url,
+			tempDir,
+			quality,
+			progress => {
+				console.log('[processDownload] Progress update:', progress.percent + '%')
+				downloadSessionService.setProgress(sessionId, {
+					percent: progress.percent,
+					totalSize: progress.totalSize,
+					speed: progress.speed,
+					eta: progress.eta,
+					status: 'downloading',
+				})
+			},
+			3,
 		)
+		
+		console.log('========================================')
+		console.log('[processDownload] downloadWithRetry completed')
+		console.log('[processDownload] ytResult:', JSON.stringify(ytResult, null, 2))
+		console.log('========================================')
 
-		console.log(
-			'[yt-dlp] Running with args:',
-			args.join(' '),
-		)
+		if (!ytResult.success || !ytResult.filePath) {
+			console.error('[processDownload] yt-dlp failed!')
+			console.error('[processDownload] error:', ytResult.error)
+			downloadSessionService.markError(sessionId, ytResult.error || 'yt-dlp download failed')
+			return
+		}
 
-		const process = spawn('yt-dlp', args)
+		console.log('[processDownload] File downloaded to:', ytResult.filePath)
+		downloadSessionService.updateStatus(sessionId, 'merging')
+		console.log('[processDownload] Status set to: merging')
 
-		let stdout = ''
-		let stderr = ''
+		console.log('[processDownload] Calling runFfprobe...')
+		const ffprobeResult = await runFfprobe(ytResult.filePath)
+		console.log('[processDownload] runFfprobe completed, result:', ffprobeResult)
 
-		process.stdout.on('data', data => {
-			stdout += data.toString()
-			console.log('[yt-dlp stdout]:', data.toString().trim())
-		})
-
-		process.stderr.on('data', data => {
-			stderr += data.toString()
-			console.log('[yt-dlp stderr]:', data.toString().trim())
-		})
-
-		process.on('close', code => {
-			console.log('[yt-dlp] Exit code:', code)
-			console.log('[yt-dlp] stdout length:', stdout.length)
-			console.log('[yt-dlp] stderr length:', stderr.length)
-
-			if (code === 0) {
-				let filePath = ''
-				let detectedQuality = 'best'
-
-				const allOutput = stdout + '\n' + stderr
-
-				const destinationMatch = allOutput.match(
-					/\[download\] Destination: (.+\.mp4)/,
-				)
-				if (destinationMatch?.[1]) {
-					filePath = destinationMatch[1].trim()
-				}
-
-				if (!filePath) {
-					const mergeMatch = allOutput.match(
-						/\[download\] Merging formats into "(.+\.mp4)"/,
-					)
-					if (mergeMatch?.[1]) {
-						filePath = mergeMatch[1].trim()
-					}
-				}
-
-				if (!filePath) {
-					const ffmpegMatch = allOutput.match(
-						/\[Merger\] Merging formats into "(.+\.mp4)"/,
-					)
-					if (ffmpegMatch?.[1]) {
-						filePath = ffmpegMatch[1].trim()
-					}
-				}
-
-				if (!filePath) {
-					const files = readdirSync(TEMP_DIR)
-						.filter(
-							f =>
-								f.startsWith(`video_${timestamp}`) &&
-								f.endsWith('.mp4'),
-						)
-						.sort()
-					const lastFile = files[files.length - 1]
-					if (lastFile) {
-						filePath = join(TEMP_DIR, lastFile)
-						console.log('[yt-dlp] Found file by listing:', filePath)
-					}
-				}
-
-				console.log('[yt-dlp] Parsed file path:', filePath)
-
-				if (filePath) {
-					const qualityMatch = filePath.match(/_(\d+)p\./)
-					detectedQuality = qualityMatch?.[1] ?? 'best'
-					console.log(
-						'[yt-dlp] Downloaded to:',
-						filePath,
-						'quality:',
-						detectedQuality,
-					)
-					resolve({ path: filePath, quality: detectedQuality })
-				} else {
-					console.log(
-						'[yt-dlp] Full stdout:',
-						stdout.substring(0, 500),
-					)
-					console.log(
-						'[yt-dlp] Full stderr:',
-						stderr.substring(0, 500),
-					)
-					reject(
-						new Error(
-							'Could not find output file in stdout/stderr',
-						),
-					)
-				}
-			} else {
-				console.log('[yt-dlp] stderr:', stderr.substring(0, 500))
-				reject(new Error(`yt-dlp failed with code ${code}: ${stderr}`))
+		if (!ffprobeResult) {
+			console.error('[processDownload] ffprobe returned null!')
+			console.error('[processDownload] File path:', ytResult.filePath)
+			
+			const fs = await import('fs')
+			const files = fs.readdirSync(tempDir)
+			console.log('[processDownload] Files in tempDir:', files)
+			
+			for (const file of files) {
+				const filePath = join(tempDir, file)
+				const stats = fs.statSync(filePath)
+				console.log('[processDownload] File:', file, 'size:', stats.size)
 			}
+			
+			downloadSessionService.markError(sessionId, 'Failed to validate video file')
+			return
+		}
+
+		console.log('[processDownload] ffprobe result:', {
+			hasVideo: ffprobeResult.hasVideo,
+			hasAudio: ffprobeResult.hasAudio,
+			hasVideoStream: !!ffprobeResult.videoStream,
+			hasAudioStream: !!ffprobeResult.audioStream,
+			duration: ffprobeResult.duration,
+			fileSize: ffprobeResult.fileSize,
 		})
 
-		process.on('error', err => {
-			console.error('[yt-dlp] Error:', err)
-			reject(err)
-		})
-	})
+		if (!ffprobeResult.hasVideo) {
+			console.error('[processDownload] No video stream!')
+			downloadSessionService.markError(sessionId, 'Video file has no video stream')
+			return
+		}
+
+		if (!ffprobeResult.hasAudio) {
+			console.warn('[processDownload] No audio stream detected - proceeding anyway')
+		}
+
+		console.log('[processDownload] Applying faststart...')
+		const faststartResult = await applyFaststart(ytResult.filePath)
+		console.log('[processDownload] faststartResult:', faststartResult)
+
+		if (ffprobeResult.fileSize === 0) {
+			console.error('[processDownload] File is empty!')
+			downloadSessionService.markError(sessionId, 'Downloaded file is empty')
+			return
+		}
+
+		console.log('[processDownload] SUCCESS - final file:', ytResult.filePath)
+		downloadSessionService.markFinished(sessionId, ytResult.filePath, ytResult.quality || 'best')
+		console.log('[processDownload] Session marked as finished')
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : 'Download error'
+		console.error('[processDownload] EXCEPTION!')
+		console.error('[processDownload] error:', errorMsg)
+		if (err instanceof Error && err.stack) {
+			console.error('[processDownload] stack:', err.stack)
+		}
+		logError('download failed', err)
+		downloadSessionService.markError(sessionId, errorMsg)
+	}
 }
 
 export const downloadRoutes = new Elysia({ prefix: '/api/video' })
 	.onError(({ error, path }) => {
-		logError(
-			`Route error ${path}`,
-			'message' in error ? error : String(error),
-		)
+		logError(`Route error ${path}`, 'message' in error ? error : String(error))
 	})
 	.get('/download', async ({ query }) => {
 		const { url, quality } = query as { url?: string; quality?: string }
+
+		console.log('[download] Received request')
 
 		if (!url) {
 			return Response.json(
@@ -180,134 +141,32 @@ export const downloadRoutes = new Elysia({ prefix: '/api/video' })
 			)
 		}
 
-		try {
-			const parsed = parseUrl(url)
-			if (!parsed) {
-				return Response.json(
-					{ error: 'Unsupported URL', code: 'UNSUPPORTED_URL' },
-					{ status: 400 },
-				)
-			}
+		console.log('[download] Request - URL:', url, 'quality:', quality)
 
-			const platform = getPlatformFromUrl(url)
-			const platformStr = platform ?? undefined
-			console.log('[download] Platform from URL:', platform)
-
-			let info
-			try {
-				info = await getVideoInfo(url)
-				console.log('[download] Got video info:', info.title)
-			} catch (infoErr) {
-				logError('getVideoInfo failed', infoErr)
-				info = { title: 'video' }
-			}
-
-			console.log(
-				'[download] Platform:',
-				platform,
-				'Starting yt-dlp download for:',
-				info.title,
-			)
-
-			const ytDlpUrl = url
-
-			console.log(
-				'[download] Before yt-dlp download, quality:',
-				quality,
-				'platform:',
-				platform,
-			)
-
-			let result
-			try {
-				result = await downloadWithYtDlp(ytDlpUrl, quality)
-			} catch (dlErr) {
-				logError('downloadWithYtDlp failed', dlErr)
-				return Response.json(
-					{
-						error:
-							dlErr instanceof Error
-								? dlErr.message
-								: 'Download failed',
-						code: 'DOWNLOAD_ERROR',
-					},
-					{ status: 500 },
-				)
-			}
-			console.log('[download] Result:', result)
-
-			if (!result) {
-				return Response.json(
-					{
-						error: 'Download failed - no result returned',
-						code: 'DOWNLOAD_FAILED',
-					},
-					{ status: 500 },
-				)
-			}
-
-			if (!existsSync(result.path)) {
-				return Response.json(
-					{
-						error: 'Download failed - file not found',
-						code: 'DOWNLOAD_FAILED',
-						path: result.path,
-					},
-					{ status: 500 },
-				)
-			}
-
-			const { statSync, unlinkSync } = await import('node:fs')
-
-			const filePath = result.path
-			const fileStats = statSync(filePath)
-
-			if (fileStats.size === 0) {
-				try {
-					unlinkSync(filePath)
-				} catch (e) {
-					console.log('[download] Could not delete temp file:', e)
-				}
-				return Response.json(
-					{
-						error: 'Download failed - file is empty',
-						code: 'DOWNLOAD_FAILED',
-						size: 0,
-					},
-					{ status: 500 },
-				)
-			}
-
-			const safeName = (info.title || 'video')
-				.replace(/[<>:"/\\|?*]/g, '')
-				.replace(/\s+/g, '_')
-				.substring(0, 100)
-			const outputFilename = `${safeName}_${result.quality}p.mp4`
-
-			const fileData = Bun.file(filePath)
-			const fileSize = fileData.size
-
-			console.log(
-				'[download] Sending file:',
-				filePath,
-				'size:',
-				fileSize,
-			)
-
-			return new Response(fileData, {
-				headers: {
-					'Content-Type': 'video/mp4',
-					'Content-Length': String(fileSize),
-					'Content-Disposition': contentDisposition(outputFilename),
-				},
-			})
-		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : 'Unknown error'
-			console.error('[download] Error:', message)
+		const parsed = parseUrl(url)
+		if (!parsed) {
+			console.log('[download] Unsupported URL:', url)
 			return Response.json(
-				{ error: message, code: 'DOWNLOAD_ERROR' },
+				{ error: 'Unsupported URL', code: 'UNSUPPORTED_URL' },
+				{ status: 400 },
+			)
+		}
+
+		console.log('[download] Platform:', parsed.platform, 'Video ID:', parsed.videoId)
+
+		const sessionId = downloadSessionService.create()
+		const tempDir = downloadSessionService.getTempDir(sessionId)
+
+		if (!tempDir) {
+			return Response.json(
+				{ error: 'Failed to create session', code: 'SESSION_ERROR' },
 				{ status: 500 },
 			)
 		}
+
+		console.log('[download] Returning sessionId immediately')
+
+		processDownload(sessionId, url, tempDir, quality)
+
+		return Response.json({ downloadId: sessionId })
 	})

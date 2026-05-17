@@ -2,6 +2,9 @@ import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
 import { videoRoutes } from './routes/video'
 import { downloadRoutes } from './routes/download'
+import { progressRoutes } from './routes/progress'
+import { fileRoutes } from './routes/file'
+
 
 const app = new Elysia()
 	.use(cors({ origin: ['http://localhost:5173'] }))
@@ -11,6 +14,8 @@ const app = new Elysia()
 	})
 	.use(videoRoutes)
 	.use(downloadRoutes)
+	.use(progressRoutes)
+	.use(fileRoutes)
 	.get('/api/health', () => ({ status: 'ok', runtime: 'bun', port: 3001 }))
 	.listen(3001)
 

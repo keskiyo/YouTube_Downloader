@@ -1,97 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DownloadProgress, VideoInfo } from '../types'
+import { useSSE } from './useSSE'
+import type { DownloadProgress, DownloadStatus, VideoInfo } from '../types'
 
 function sanitizeAndTransliterate(name: string): string {
 	const transliterationMap: Record<string, string> = {
-		а: 'a',
-		б: 'b',
-		в: 'v',
-		г: 'g',
-		д: 'd',
-		е: 'e',
-		ё: 'e',
-		ж: 'zh',
-		з: 'z',
-		и: 'i',
-		й: 'y',
-		к: 'k',
-		л: 'l',
-		м: 'm',
-		н: 'n',
-		о: 'o',
-		п: 'p',
-		р: 'r',
-		с: 's',
-		т: 't',
-		у: 'u',
-		ф: 'f',
-		х: 'kh',
-		ц: 'c',
-		ч: 'ch',
-		ш: 'sh',
-		щ: 'shch',
-		ъ: '',
-		ы: 'y',
-		ь: '',
-		э: 'e',
-		ю: 'yu',
-		я: 'ya',
-		А: 'A',
-		Б: 'B',
-		В: 'V',
-		Г: 'G',
-		Д: 'D',
-		Е: 'E',
-		Ё: 'E',
-		Ж: 'Zh',
-		З: 'Z',
-		И: 'I',
-		Й: 'Y',
-		К: 'K',
-		Л: 'L',
-		М: 'M',
-		Н: 'N',
-		О: 'O',
-		П: 'P',
-		Р: 'R',
-		С: 'S',
-		Т: 'T',
-		У: 'U',
-		Ф: 'F',
-		Х: 'Kh',
-		Ц: 'C',
-		Ч: 'Ch',
-		Ш: 'Sh',
-		Щ: 'Shch',
-		Ъ: '',
-		Ы: 'Y',
-		Ь: '',
-		Э: 'E',
-		Ю: 'Yu',
-		Я: 'Ya',
+		а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e',
+		ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm',
+		н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u',
+		ф: 'f', х: 'kh', ц: 'c', ч: 'ch', ш: 'sh', щ: 'shch',
+		ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+		А: 'A', Б: 'B', В: 'V', Г: 'G', Д: 'D', Е: 'E', Ё: 'E',
+		Ж: 'Zh', З: 'Z', И: 'I', Й: 'Y', К: 'K', Л: 'L', М: 'M',
+		Н: 'N', О: 'O', П: 'P', Р: 'R', С: 'S', Т: 'T', У: 'U',
+		Ф: 'F', Х: 'Kh', Ц: 'C', Ч: 'Ch', Ш: 'Sh', Щ: 'Shch',
+		Ъ: '', Ы: 'Y', Ь: '', Э: 'E', Ю: 'Yu', Я: 'Ya',
 	}
-
-	const transliterated = name
+	return name
 		.split('')
 		.map(c => transliterationMap[c] || c)
 		.join('')
-	return transliterated
 		.replace(/[<>:"/\\|?*]/g, '')
 		.replace(/\s+/g, '_')
 		.substring(0, 80)
-}
-
-function getExtension(contentType: string): string {
-	if (contentType.includes('mp4') || contentType.includes('quicktime'))
-		return 'mp4'
-	if (
-		contentType.includes('mpeg') ||
-		contentType.includes('mp2t') ||
-		contentType.includes('ts')
-	)
-		return 'ts'
-	if (contentType.includes('webm')) return 'webm'
-	return 'mp4'
 }
 
 interface UseVideoDownloadReturn {
@@ -113,8 +43,10 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 	const [progress, setProgress] = useState<DownloadProgress | null>(null)
 	const [isDownloading, setIsDownloading] = useState(false)
 	const [isServerReady, setIsServerReady] = useState(true)
+
 	const originalUrlRef = useRef<string>('')
-	const resolvedQualityRef = useRef<string>('best')
+	const downloadIdRef = useRef<string | null>(null)
+	const currentStatusRef = useRef<DownloadStatus | null>(null)
 
 	useEffect(() => {
 		fetch('/api/health', { method: 'GET' })
@@ -134,9 +66,7 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 
 			if (!response.ok) {
 				const errData = await response.json()
-				throw new Error(
-					errData.error || 'Не удалось получить информацию о видео',
-				)
+				throw new Error(errData.error || 'Не удалось получить информацию о видео')
 			}
 			const data = await response.json()
 			setVideoInfo(data)
@@ -147,107 +77,122 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		}
 	}, [])
 
-	const downloadVideo = useCallback(
-		async (quality?: string) => {
-			if (!videoInfo || !originalUrlRef.current) return
+	const handleSSEProgress = useCallback((data: DownloadProgress) => {
+		console.log('[useVideoDownload] SSE progress:', data.status, data.percent + '%')
+		setProgress(data)
+		currentStatusRef.current = data.status
 
-			setIsDownloading(true)
-			setError(null)
-			setProgress({ percent: 0, downloaded: 0, total: 0 })
+		if (data.status === 'finished') {
+			console.log('[useVideoDownload] Status is finished, triggering file download')
+			triggerFileDownload(data)
+		} else if (data.status === 'error') {
+			console.log('[useVideoDownload] Status is error:', data.error)
+			setError(data.error || 'Ошибка загрузки')
+			setIsDownloading(false)
+		}
+	}, [])
 
-			try {
-				const urlParams = new URLSearchParams({
-					url: originalUrlRef.current,
-				})
-				if (quality && quality !== 'best') {
-					urlParams.set('quality', quality)
-				}
+	const triggerFileDownload = useCallback(async (finalProgress: DownloadProgress) => {
+		if (!downloadIdRef.current || !videoInfo) {
+			setIsDownloading(false)
+			return
+		}
 
-				const response = await fetch(`/api/video/download?${urlParams}`)
+		try {
+			const response = await fetch(`/api/video/file/${downloadIdRef.current}`)
 
-				if (!response.ok) {
-					const contentType =
-						response.headers.get('content-type') || ''
-					if (contentType.includes('application/json')) {
-						const errData = await response.json()
-						throw new Error(
-							errData.error || 'Не удалось скачать видео',
-						)
-					} else {
-						const text = await response.text()
-						throw new Error(text || 'Ошибка сервера')
-					}
-				}
+			if (!response.ok) {
+				const errData = await response.json()
+				throw new Error(errData.error || 'Не удалось скачать файл')
+			}
 
-				const contentType =
-					response.headers.get('Content-Type') || 'video/mp4'
-				const extension = getExtension(contentType)
-				const safeName = sanitizeAndTransliterate(
-					videoInfo.title || 'video',
-				)
+			const contentType = response.headers.get('Content-Type') || 'video/mp4'
+			const blob = await response.blob()
 
-				const qualityLabel =
-					quality && quality !== 'best'
-						? quality.replace('p', '')
-						: 'best'
-				resolvedQualityRef.current = qualityLabel
-				const filename = `${safeName}_${qualityLabel}p.${extension}`
+			const safeName = sanitizeAndTransliterate(videoInfo.title || 'video')
+			const qualityLabel = finalProgress.totalSize || 'best'
+			const filename = `${safeName}_${qualityLabel}.mp4`
 
-				console.log(
-					'[useVideoDownload] Content-Type:',
-					contentType,
-					'Extension:',
-					extension,
-					'Filename:',
-					filename,
-				)
+			const blobUrl = URL.createObjectURL(blob)
+			const a = document.createElement('a')
+			a.href = blobUrl
+			a.download = filename
+			a.style.display = 'none'
+			document.body.appendChild(a)
+			a.click()
+			document.body.removeChild(a)
 
-				const reader = response.body?.getReader()
-				if (!reader) throw new Error('Нет данных для скачивания')
+			setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Ошибка при сохранении файла')
+		} finally {
+			setIsDownloading(false)
+			downloadIdRef.current = null
+		}
+	}, [videoInfo])
 
-				const contentLength =
-					response.headers.get('Content-Length') || '0'
-				const total = parseInt(contentLength, 10) || 0
-				let downloaded = 0
+	const sseUrl = downloadIdRef.current
+		? `/api/video/progress/${downloadIdRef.current}`
+		: null
 
-				const chunks: BlobPart[] = []
-				while (true) {
-					const { done, value } = await reader.read()
-					if (done) break
-					chunks.push(value)
-					downloaded += value.length
-					setProgress({
-						percent:
-							total > 0
-								? Math.round((downloaded / total) * 100)
-								: 0,
-						downloaded,
-						total,
-					})
-				}
-
-				const blob = new Blob(chunks, { type: contentType })
-				const blobUrl = URL.createObjectURL(blob)
-				const a = document.createElement('a')
-
-				a.href = blobUrl
-				a.download = filename
-				document.body.appendChild(a)
-				a.click()
-				document.body.removeChild(a)
-				setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
-			} catch (err) {
-				console.error('[useVideoDownload] Error:', err)
-				setError(
-					err instanceof Error ? err.message : 'Произошла ошибка',
-				)
-			} finally {
+	useSSE<DownloadProgress>(sseUrl, {
+		onMessage: handleSSEProgress,
+		onError: err => {
+			console.error('[useVideoDownload] SSE error:', err)
+			if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
+				setError('Соединение потеряно')
 				setIsDownloading(false)
-				setTimeout(() => setProgress(null), 1000)
 			}
 		},
-		[videoInfo],
-	)
+		onClose: () => {
+			console.log('[useVideoDownload] SSE connection closed, status:', currentStatusRef.current)
+			if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
+				setIsDownloading(false)
+			}
+		},
+		autoReconnect: false,
+	})
+
+	const downloadVideo = useCallback(async (quality?: string) => {
+		if (!videoInfo || !originalUrlRef.current) return
+
+		setIsDownloading(true)
+		setError(null)
+		setProgress({ percent: 0, status: 'preparing' })
+		downloadIdRef.current = null
+		currentStatusRef.current = null
+
+		try {
+			const urlParams = new URLSearchParams({ url: originalUrlRef.current })
+			if (quality && quality !== 'best') {
+				urlParams.set('quality', quality)
+			}
+
+			const response = await fetch(`/api/video/download?${urlParams}`)
+
+			if (!response.ok) {
+				const contentType = response.headers.get('content-type') || ''
+				if (contentType.includes('application/json')) {
+					try {
+						const errData = await response.json()
+						throw new Error(errData.error || 'Не удалось скачать видео')
+					} catch {
+						throw new Error('Не удалось скачать видео')
+					}
+				} else {
+					throw new Error('Не удалось скачать видео')
+				}
+			}
+
+			const data = await response.json()
+			downloadIdRef.current = data.downloadId
+			console.log('[useVideoDownload] Download started, ID:', data.downloadId)
+		} catch (err) {
+			console.error('[useVideoDownload] Error:', err)
+			setError(err instanceof Error ? err.message : 'Произошла ошибка')
+			setIsDownloading(false)
+		}
+	}, [videoInfo])
 
 	const reset = useCallback(() => {
 		setVideoInfo(null)
@@ -256,6 +201,8 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		setProgress(null)
 		setIsDownloading(false)
 		originalUrlRef.current = ''
+		downloadIdRef.current = null
+		currentStatusRef.current = null
 	}, [])
 
 	return {

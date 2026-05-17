@@ -35,10 +35,15 @@ export type VideoQuality =
 	| 'best'
 	| 'choose'
 
+export type DownloadStatus = 'preparing' | 'downloading' | 'merging' | 'finished' | 'error'
+
 export interface DownloadProgress {
 	percent: number
-	downloaded: number
-	total: number
+	totalSize?: string
+	speed?: string
+	eta?: string
+	status: DownloadStatus
+	error?: string
 }
 
 export interface Platform {

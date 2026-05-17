@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Download } from 'lucide-react'
+import { CheckCircle, Download, Loader2 } from 'lucide-react'
 import type { DownloadProgress, VideoInfo } from '../../types'
 
 interface VideoResultProps {
@@ -25,6 +25,29 @@ export function VideoResult({
 			return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 		return `${m}:${s.toString().padStart(2, '0')}`
 	}
+
+	const getStatusText = (
+		status: DownloadProgress['status'] | undefined,
+	): string => {
+		switch (status) {
+			case 'preparing':
+				return 'Подготовка...'
+			case 'downloading':
+				return 'Скачивание...'
+			case 'merging':
+				return 'Объединение дорожек...'
+			case 'finished':
+				return 'Готово!'
+			case 'error':
+				return 'Ошибка'
+			default:
+				return 'Загрузка...'
+		}
+	}
+
+	const isActive =
+		progress &&
+		['preparing', 'downloading', 'merging'].includes(progress.status)
 
 	return (
 		<motion.div
@@ -72,39 +95,58 @@ export function VideoResult({
 						)}
 					</button>
 				</div>
-				{progress && (
-					<div className='space-y-2'>
-						<div className='flex justify-between text-sm'>
-							<span className='text-text-secondary'>
-								Загрузка...
-							</span>
+
+				{isActive && (
+					<div className='space-y-2 p-3 bg-bg-primary rounded-lg'>
+						<div className='flex items-center justify-between'>
+							<div className='flex items-center gap-2'>
+								<Loader2 className='w-4 h-4 text-primary-blue animate-spin' />
+								<span className='text-text-secondary text-sm'>
+									{getStatusText(progress?.status)}
+								</span>
+							</div>
 							<span className='text-primary-blue font-medium'>
-								{progress.percent}%
+								{Math.round(progress?.percent || 0)}%
 							</span>
 						</div>
-						<div className='w-full h-2 bg-bg-primary rounded-full overflow-hidden'>
+
+						<div className='w-full h-2 bg-bg-secondary rounded-full overflow-hidden'>
 							<motion.div
 								initial={{ width: 0 }}
-								animate={{ width: `${progress.percent}%` }}
+								animate={{
+									width: `${progress?.percent || 0}%`,
+								}}
 								transition={{ duration: 0.3 }}
 								className='h-full bg-primary-blue rounded-full'
 							/>
 						</div>
+
 						<div className='flex justify-between text-xs text-text-secondary'>
-							<span>
-								{Math.round(progress.downloaded / 1024 / 1024)}{' '}
-								MB
-							</span>
-							<span>
-								{Math.round(progress.total / 1024 / 1024)} MB
-							</span>
+							{progress?.speed && <span>{progress.speed}</span>}
+							{progress?.eta && (
+								<span>Осталось: {progress.eta}</span>
+							)}
+							{progress?.totalSize && !progress?.speed && (
+								<span>{progress.totalSize}</span>
+							)}
 						</div>
 					</div>
 				)}
-				{video.formats && video.formats.filter(f => f.quality !== 'best').length > 0 && (
-					<div className='mt-3 text-xs text-text-secondary'>
-						Доступные качества:{' '}
-						{video.formats.filter(f => f.quality !== 'best').map(f => f.quality).join(', ')}
+
+				{progress?.status === 'finished' && (
+					<div className='flex items-center gap-2 p-3 bg-green-500/10 rounded-lg'>
+						<CheckCircle className='w-4 h-4 text-green-500' />
+						<span className='text-green-500 text-sm'>
+							Файл готов к скачиванию
+						</span>
+					</div>
+				)}
+
+				{progress?.status === 'error' && (
+					<div className='p-3 bg-red-500/10 rounded-lg'>
+						<span className='text-red-500 text-sm'>
+							{progress.error || 'Произошла ошибка'}
+						</span>
 					</div>
 				)}
 			</div>
