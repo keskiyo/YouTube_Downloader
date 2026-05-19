@@ -153,3 +153,6 @@ export function VideoResult({
 		</motion.div>
 	)
 }
+
+// ! Тестовая ссылка RUTUBE
+// ? https://rutube.ru/video/8e3fbfcce4118bf11cd031563477cb5e/?r=wd
