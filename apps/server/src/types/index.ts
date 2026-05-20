@@ -22,9 +22,9 @@ export interface DownloadProgress {
 	percentage: number
 }
 
-export type SupportedPlatform = 
+export type SupportedPlatform =
 	| 'YouTube'
-	| 'VK'
+	| 'VkVideo'
 	| 'Yandex'
 	| 'Rutube'
 	| 'Telegram'

@@ -15,13 +15,33 @@ function sanitizeAndTransliterate(name: string): string {
 		Ф: 'F', Х: 'Kh', Ц: 'C', Ч: 'Ch', Ш: 'Sh', Щ: 'Shch',
 		Ъ: '', Ы: 'Y', Ь: '', Э: 'E', Ю: 'Yu', Я: 'Ya',
 	}
+
 	return name
 		.split('')
 		.map(c => transliterationMap[c] || c)
 		.join('')
-		.replace(/[<>:"/\\|?*]/g, '')
-		.replace(/\s+/g, '_')
+		.replace(/[^A-Za-z0-9]+/g, '_')
+		.replace(/_+/g, '_')
+		.replace(/^_+|_+$/g, '')
 		.substring(0, 80)
+		.replace(/^_+|_+$/g, '') || 'video'
+}
+
+function formatQualityLabel(quality?: string): string {
+	const value = (quality || 'best').trim()
+
+	if (/^\d+$/.test(value)) {
+		return `${value}p`
+	}
+
+	if (/^\d+p$/i.test(value)) {
+		return value.toLowerCase()
+	}
+
+	return value
+		.replace(/[^A-Za-z0-9]+/g, '_')
+		.replace(/_+/g, '_')
+		.replace(/^_+|_+$/g, '') || 'best'
 }
 
 interface UseVideoDownloadReturn {
@@ -36,6 +56,23 @@ interface UseVideoDownloadReturn {
 	reset: () => void
 }
 
+interface DownloadStartResponse {
+	downloadId: string
+}
+
+interface ApiErrorResponse {
+	error?: string
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+	try {
+		const data = await response.json() as ApiErrorResponse
+		return data.error || fallback
+	} catch {
+		return fallback
+	}
+}
+
 export function useVideoDownload(): UseVideoDownloadReturn {
 	const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -43,15 +80,23 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 	const [progress, setProgress] = useState<DownloadProgress | null>(null)
 	const [isDownloading, setIsDownloading] = useState(false)
 	const [isServerReady, setIsServerReady] = useState(true)
+	const [downloadId, setDownloadId] = useState<string | null>(null)
 
 	const originalUrlRef = useRef<string>('')
 	const downloadIdRef = useRef<string | null>(null)
 	const currentStatusRef = useRef<DownloadStatus | null>(null)
+	const fileDownloadStartedRef = useRef(false)
 
 	useEffect(() => {
 		fetch('/api/health', { method: 'GET' })
 			.then(() => setIsServerReady(true))
 			.catch(() => setIsServerReady(false))
+	}, [])
+
+	const clearDownloadId = useCallback(() => {
+		downloadIdRef.current = null
+		fileDownloadStartedRef.current = false
+		setDownloadId(null)
 	}, [])
 
 	const fetchVideoInfo = useCallback(async (url: string) => {
@@ -65,10 +110,10 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 			const response = await fetch(fetchUrl)
 
 			if (!response.ok) {
-				const errData = await response.json()
-				throw new Error(errData.error || 'Не удалось получить информацию о видео')
+				throw new Error(await readApiError(response, 'Не удалось получить информацию о видео'))
 			}
-			const data = await response.json()
+
+			const data = await response.json() as VideoInfo
 			setVideoInfo(data)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Произошла ошибка')
@@ -77,40 +122,28 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		}
 	}, [])
 
-	const handleSSEProgress = useCallback((data: DownloadProgress) => {
-		console.log('[useVideoDownload] SSE progress:', data.status, data.percent + '%')
-		setProgress(data)
-		currentStatusRef.current = data.status
-
-		if (data.status === 'finished') {
-			console.log('[useVideoDownload] Status is finished, triggering file download')
-			triggerFileDownload(data)
-		} else if (data.status === 'error') {
-			console.log('[useVideoDownload] Status is error:', data.error)
-			setError(data.error || 'Ошибка загрузки')
-			setIsDownloading(false)
-		}
-	}, [])
-
 	const triggerFileDownload = useCallback(async (finalProgress: DownloadProgress) => {
+		if (fileDownloadStartedRef.current) {
+			return
+		}
+
 		if (!downloadIdRef.current || !videoInfo) {
 			setIsDownloading(false)
 			return
 		}
 
+		fileDownloadStartedRef.current = true
+
 		try {
 			const response = await fetch(`/api/video/file/${downloadIdRef.current}`)
 
 			if (!response.ok) {
-				const errData = await response.json()
-				throw new Error(errData.error || 'Не удалось скачать файл')
+				throw new Error(await readApiError(response, 'Не удалось скачать файл'))
 			}
 
-			const contentType = response.headers.get('Content-Type') || 'video/mp4'
 			const blob = await response.blob()
-
 			const safeName = sanitizeAndTransliterate(videoInfo.title || 'video')
-			const qualityLabel = finalProgress.totalSize || 'best'
+			const qualityLabel = formatQualityLabel(finalProgress.totalSize)
 			const filename = `${safeName}_${qualityLabel}.mp4`
 
 			const blobUrl = URL.createObjectURL(blob)
@@ -127,29 +160,53 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 			setError(err instanceof Error ? err.message : 'Ошибка при сохранении файла')
 		} finally {
 			setIsDownloading(false)
-			downloadIdRef.current = null
+			clearDownloadId()
 		}
-	}, [videoInfo])
+	}, [clearDownloadId, videoInfo])
 
-	const sseUrl = downloadIdRef.current
-		? `/api/video/progress/${downloadIdRef.current}`
+	const handleSSEProgress = useCallback((data: DownloadProgress) => {
+		console.log('[useVideoDownload] SSE progress:', data.status, data.percent + '%')
+		setProgress(data)
+		currentStatusRef.current = data.status
+
+		if (data.status === 'finished') {
+			console.log('[useVideoDownload] Status is finished, triggering file download')
+			triggerFileDownload(data)
+			return
+		}
+
+		if (data.status === 'error') {
+			console.log('[useVideoDownload] Status is error:', data.error)
+			setError(data.error || 'Ошибка загрузки')
+			setIsDownloading(false)
+			clearDownloadId()
+		}
+	}, [clearDownloadId, triggerFileDownload])
+
+	const handleSSEError = useCallback((err: Event) => {
+		console.error('[useVideoDownload] SSE error:', err)
+		if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
+			setError('Соединение потеряно')
+			setIsDownloading(false)
+			clearDownloadId()
+		}
+	}, [clearDownloadId])
+
+	const handleSSEClose = useCallback(() => {
+		console.log('[useVideoDownload] SSE connection closed, status:', currentStatusRef.current)
+		if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
+			setIsDownloading(false)
+		}
+	}, [])
+
+	const sseUrl = downloadId
+		? `/api/video/progress/${downloadId}`
 		: null
 
 	useSSE<DownloadProgress>(sseUrl, {
 		onMessage: handleSSEProgress,
-		onError: err => {
-			console.error('[useVideoDownload] SSE error:', err)
-			if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
-				setError('Соединение потеряно')
-				setIsDownloading(false)
-			}
-		},
-		onClose: () => {
-			console.log('[useVideoDownload] SSE connection closed, status:', currentStatusRef.current)
-			if (currentStatusRef.current !== 'finished' && currentStatusRef.current !== 'error') {
-				setIsDownloading(false)
-			}
-		},
+		onError: handleSSEError,
+		onClose: handleSSEClose,
 		autoReconnect: false,
 	})
 
@@ -159,8 +216,9 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		setIsDownloading(true)
 		setError(null)
 		setProgress({ percent: 0, status: 'preparing' })
-		downloadIdRef.current = null
+		clearDownloadId()
 		currentStatusRef.current = null
+		fileDownloadStartedRef.current = false
 
 		try {
 			const urlParams = new URLSearchParams({ url: originalUrlRef.current })
@@ -171,28 +229,20 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 			const response = await fetch(`/api/video/download?${urlParams}`)
 
 			if (!response.ok) {
-				const contentType = response.headers.get('content-type') || ''
-				if (contentType.includes('application/json')) {
-					try {
-						const errData = await response.json()
-						throw new Error(errData.error || 'Не удалось скачать видео')
-					} catch {
-						throw new Error('Не удалось скачать видео')
-					}
-				} else {
-					throw new Error('Не удалось скачать видео')
-				}
+				throw new Error(await readApiError(response, 'Не удалось скачать видео'))
 			}
 
-			const data = await response.json()
+			const data = await response.json() as DownloadStartResponse
 			downloadIdRef.current = data.downloadId
+			setDownloadId(data.downloadId)
 			console.log('[useVideoDownload] Download started, ID:', data.downloadId)
 		} catch (err) {
 			console.error('[useVideoDownload] Error:', err)
 			setError(err instanceof Error ? err.message : 'Произошла ошибка')
 			setIsDownloading(false)
+			clearDownloadId()
 		}
-	}, [videoInfo])
+	}, [clearDownloadId, videoInfo])
 
 	const reset = useCallback(() => {
 		setVideoInfo(null)
@@ -201,9 +251,10 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		setProgress(null)
 		setIsDownloading(false)
 		originalUrlRef.current = ''
-		downloadIdRef.current = null
+		clearDownloadId()
 		currentStatusRef.current = null
-	}, [])
+		fileDownloadStartedRef.current = false
+	}, [clearDownloadId])
 
 	return {
 		videoInfo,

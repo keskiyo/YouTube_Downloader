@@ -3,7 +3,7 @@ import { join } from 'path'
 import { parseUrl } from '../services/platform-parser'
 import { downloadSessionService } from '../services/download-session.service'
 import { downloadWithRetry } from '../services/yt-dlp.service'
-import { runFfprobe, applyFaststart } from '../services/ffmpeg.service'
+import { runFfprobe, applyFaststart, normalizeToPlayableMp4 } from '../services/ffmpeg.service'
 
 function logError(label: string, err: unknown) {
 	console.error(`[ERROR] ${label}:`, err)
@@ -60,7 +60,7 @@ async function processDownload(sessionId: string, url: string, tempDir: string, 
 		console.log('[processDownload] Status set to: merging')
 
 		console.log('[processDownload] Calling runFfprobe...')
-		const ffprobeResult = await runFfprobe(ytResult.filePath)
+		let ffprobeResult = await runFfprobe(ytResult.filePath)
 		console.log('[processDownload] runFfprobe completed, result:', ffprobeResult)
 
 		if (!ffprobeResult) {
@@ -98,6 +98,16 @@ async function processDownload(sessionId: string, url: string, tempDir: string, 
 
 		if (!ffprobeResult.hasAudio) {
 			console.warn('[processDownload] No audio stream detected - proceeding anyway')
+		}
+
+		if (ffprobeResult.formatName?.includes('mpegts')) {
+			console.log('[processDownload] Normalizing MPEG-TS output to playable MP4...')
+			await normalizeToPlayableMp4(ytResult.filePath, ffprobeResult)
+			ffprobeResult = await runFfprobe(ytResult.filePath)
+			if (!ffprobeResult?.hasVideo || !ffprobeResult.hasAudio) {
+				downloadSessionService.markError(sessionId, 'Failed to normalize video file')
+				return
+			}
 		}
 
 		console.log('[processDownload] Applying faststart...')

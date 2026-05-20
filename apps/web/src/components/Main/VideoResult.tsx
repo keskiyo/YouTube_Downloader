@@ -156,3 +156,9 @@ export function VideoResult({
 
 // ! Тестовая ссылка RUTUBE
 // ? https://rutube.ru/video/8e3fbfcce4118bf11cd031563477cb5e/?r=wd
+
+// ! Тестовая ссылка YOUTUBE
+// ? https://www.youtube.com/watch?v=XA7Gab8MViw&list=RDXA7Gab8MViw
+
+// ! Vk Видео
+// ? https://vkvideo.ru/video-228275494_456239115

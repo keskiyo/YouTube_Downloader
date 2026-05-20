@@ -63,7 +63,7 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 		}
 	}, [url, autoReconnect, reconnectInterval, onMessage, onError, onOpen])
 
-	const disconnect = useCallback(() => {
+	const disconnect = useCallback((notify = true) => {
 		if (reconnectTimeoutRef.current) {
 			clearTimeout(reconnectTimeoutRef.current)
 			reconnectTimeoutRef.current = null
@@ -74,7 +74,9 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 			eventSourceRef.current = null
 		}
 
-		onClose?.()
+		if (notify) {
+			onClose?.()
+		}
 	}, [onClose])
 
 	useEffect(() => {
@@ -83,7 +85,7 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 
 		return () => {
 			isMountedRef.current = false
-			disconnect()
+			disconnect(false)
 		}
 	}, [connect, disconnect])
 

@@ -2,6 +2,7 @@ import type { VideoInfo, ParsedUrl } from '../types'
 import { parseUrl } from './platform-parser'
 import { getYouTubeInfo } from './platforms/youtube'
 import { getRutubeInfo } from './platforms/rutube'
+import { getVkVideoInfo } from './platforms/vk-video'
 
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
 	console.log('[video.service] getVideoInfo called with:', url)
@@ -18,6 +19,8 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
 			return getYouTubeInfo(url)
 		case 'Rutube':
 			return getRutubeInfo(url)
+		case 'VkVideo':
+			return getVkVideoInfo(url)
 		default:
 			throw new Error(`Platform ${parsed.platform} not supported yet`)
 	}
@@ -34,6 +37,8 @@ export function getDownloadHandler(url: string, quality?: string) {
 			throw new Error('YouTube download via API not implemented')
 		case 'Rutube':
 			throw new Error('Rutube download not implemented')
+		case 'VkVideo':
+			throw new Error('VK Video download not implemented')
 		default:
 			throw new Error(`Platform ${parsed.platform} not supported yet`)
 	}

@@ -11,13 +11,18 @@ export const progressRoutes = new Elysia({ prefix: '/api/video' })
 
 		const encoder = new TextEncoder()
 		let isActive = true
+		let finalProgressSent = false
 
 		const stream = new ReadableStream({
 			start(controller) {
 				const sendProgress = () => {
-					if (!isActive) return
+					if (!isActive || finalProgressSent) return
 					const prog = downloadSessionService.getProgress(id)
 					if (!prog) return
+
+					if (prog.status === 'finished' || prog.status === 'error') {
+						finalProgressSent = true
+					}
 
 					try {
 						const payload = `data: ${JSON.stringify(prog)}\n\n`

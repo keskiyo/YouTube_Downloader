@@ -17,6 +17,7 @@ export interface FfprobeResult {
 	audioStream?: StreamInfo
 	duration: number
 	fileSize: number
+	formatName?: string
 }
 
 export interface FaststartResult {
@@ -52,6 +53,138 @@ function runCommand(
 		})
 		proc.on('error', reject)
 	})
+}
+
+async function probeFile(filePath: string): Promise<FfprobeResult | null> {
+	const fs = await import('fs')
+	const args = [
+		'-v', 'quiet',
+		'-print_format', 'json',
+		'-show_format',
+		'-show_streams',
+		filePath,
+	]
+	console.log('[ffprobe] args:', args.join(' '))
+
+	const output = await runCommand('ffprobe', args)
+	console.log('[ffprobe] output length:', output.length)
+	console.log('[ffprobe] raw output:', output.slice(0, 500))
+
+	if (!output || output.trim() === '') {
+		console.error('[ffprobe] returned empty output')
+		return null
+	}
+
+	let data
+	try {
+		data = JSON.parse(output)
+	} catch {
+		console.error('[ffprobe] Failed to parse JSON output')
+		return null
+	}
+
+	if (!data?.streams || !Array.isArray(data.streams)) {
+		console.error('[ffprobe] streams missing or not array')
+		return null
+	}
+
+	console.log('[ffprobe] All streams:', data.streams.map((s: any) => s.codec_type))
+	const streams = data.streams
+	const videoStream = streams.find((s: { codec_type: string }) => s.codec_type === 'video')
+	const audioStream = streams.find((s: { codec_type: string }) => s.codec_type === 'audio')
+	const fileSize = fs.statSync(filePath).size
+
+	const result: FfprobeResult = {
+		hasVideo: !!videoStream,
+		hasAudio: !!audioStream,
+		duration: parseFloat(data.format?.duration) || 0,
+		fileSize,
+		formatName: data.format?.format_name,
+	}
+
+	if (videoStream) {
+		result.videoStream = {
+			codec: videoStream.codec_name,
+			width: videoStream.width,
+			height: videoStream.height,
+			duration: parseFloat(videoStream.duration) || result.duration,
+			bitrate: videoStream.bit_rate,
+		}
+	}
+
+	if (audioStream) {
+		result.audioStream = {
+			codec: audioStream.codec_name,
+			duration: parseFloat(audioStream.duration) || result.duration,
+			bitrate: audioStream.bit_rate,
+		}
+	}
+
+	return result
+}
+
+async function canDecodeVideoFrame(inputPath: string): Promise<boolean> {
+	const { statSync, unlinkSync } = await import('fs')
+	const dir = dirname(inputPath)
+	const framePath = join(dir, `frame_${Date.now()}.jpg`)
+
+	try {
+		await runCommand('ffmpeg', [
+			'-v', 'error',
+			'-y',
+			'-ss', '00:00:05',
+			'-i', inputPath,
+			'-frames:v', '1',
+			framePath,
+		])
+		return existsSync(framePath) && statSync(framePath).size > 0
+	} catch (err) {
+		console.warn('[ffmpeg] Could not decode a video frame:', err)
+		return false
+	} finally {
+		try { unlinkSync(framePath) } catch {}
+	}
+}
+
+export async function normalizeToPlayableMp4(inputPath: string, probe: FfprobeResult): Promise<string> {
+	if (!existsSync(inputPath)) {
+		throw new Error('Input file not found')
+	}
+
+	if (!probe.formatName?.includes('mpegts')) {
+		return inputPath
+	}
+
+	const { copyFileSync, unlinkSync } = await import('fs')
+	const dir = dirname(inputPath)
+	const tempFile = join(dir, `temp_${Date.now()}_transcoded.mp4`)
+
+	console.log('[ffmpeg] Transcoding MPEG-TS HLS output to playable MP4:', inputPath)
+	await runCommand('ffmpeg', [
+		'-v', 'error',
+		'-y',
+		'-i', inputPath,
+		'-map', '0:v:0',
+		'-map', '0:a:0',
+		'-c:v', 'libx264',
+		'-preset', 'veryfast',
+		'-crf', '20',
+		'-c:a', 'aac',
+		'-b:a', '128k',
+		'-movflags', '+faststart',
+		tempFile,
+	])
+
+	const normalizedProbe = await probeFile(tempFile)
+	if (!normalizedProbe?.hasVideo || !normalizedProbe.hasAudio || !(await canDecodeVideoFrame(tempFile))) {
+		try { unlinkSync(tempFile) } catch {}
+		throw new Error('Transcoded MP4 failed validation')
+	}
+
+	copyFileSync(tempFile, inputPath)
+	unlinkSync(tempFile)
+	console.log('[ffmpeg] MPEG-TS normalized to playable MP4')
+	return inputPath
 }
 
 export async function runFfprobe(filePath: string): Promise<FfprobeResult | null> {
@@ -92,112 +225,9 @@ export async function runFfprobe(filePath: string): Promise<FfprobeResult | null
 		}
 	}
 
-	console.log('[runFfprobe] Attempting remux to fix container...')
-	try {
-		const tempFile = filePath.replace('.mp4', '_fixed.mp4')
-		console.log('[runFfprobe] Creating temp file:', tempFile)
-		
-		await runCommand('ffmpeg', [
-			'-y',
-			'-i', filePath,
-			'-c', 'copy',
-			'-movflags', '+faststart',
-			tempFile,
-		])
-		
-		const fixedSize = fs.statSync(tempFile).size
-		console.log('[runFfprobe] Remux completed, size:', fixedSize)
-		
-		if (fixedSize > fileSize * 0.9 && fixedSize > 10000) {
-			console.log('[runFfprobe] Remux successful, replacing original')
-			fs.unlinkSync(filePath)
-			fs.renameSync(tempFile, filePath)
-			validFilePath = filePath
-			console.log('[runFfprobe] Original replaced with fixed version')
-		} else {
-			console.log('[runFfprobe] Remux failed or file too small, keeping original')
-			try { fs.unlinkSync(tempFile) } catch {}
-		}
-	} catch (err) {
-		console.warn('[runFfprobe] Remux failed:', err)
-	}
-
 	console.log('[runFfprobe] Running ffprobe on:', validFilePath)
 	try {
-		const args = [
-			'-v', 'quiet',
-			'-print_format', 'json',
-			'-show_format',
-			'-show_streams',
-			validFilePath,
-		]
-		console.log('[runFfprobe] ffprobe args:', args.join(' '))
-
-		const output = await runCommand('ffprobe', args)
-		console.log('[runFfprobe] ffprobe output length:', output.length)
-		console.log('[runFfprobe] ffprobe raw output:', output.slice(0, 500))
-
-		if (!output || output.trim() === '') {
-			console.error('[runFfprobe] ffprobe returned empty output')
-			return null
-		}
-
-		let data
-		try {
-			data = JSON.parse(output)
-			console.log('[runFfprobe] JSON parsed successfully')
-		} catch {
-			console.error('[runFfprobe] Failed to parse ffprobe output')
-			return null
-		}
-
-		if (!data) {
-			console.error('[runFfprobe] data is null/undefined')
-			return null
-		}
-		
-		if (!data.streams || !Array.isArray(data.streams)) {
-			console.error('[runFfprobe] streams missing or not array')
-			console.log('[runFfprobe] data keys:', Object.keys(data))
-			return null
-		}
-		
-		console.log('[runFfprobe] All streams:', data.streams.map((s: any) => s.codec_type))
-		const streams = data.streams
-
-		const videoStream = streams.find((s: { codec_type: string }) => s.codec_type === 'video')
-		const audioStream = streams.find((s: { codec_type: string }) => s.codec_type === 'audio')
-
-		console.log('[runFfprobe] Video stream found:', !!videoStream)
-		console.log('[runFfprobe] Audio stream found:', !!audioStream)
-		
-		const validFileSize = fs.statSync(validFilePath).size
-
-		const result: FfprobeResult = {
-			hasVideo: !!videoStream,
-			hasAudio: !!audioStream,
-			duration: parseFloat(data.format?.duration) || 0,
-			fileSize: validFileSize,
-		}
-
-		if (videoStream) {
-			result.videoStream = {
-				codec: videoStream.codec_name,
-				width: videoStream.width,
-				height: videoStream.height,
-				duration: parseFloat(videoStream.duration) || result.duration,
-				bitrate: videoStream.bit_rate,
-			}
-		}
-
-		if (audioStream) {
-			result.audioStream = {
-				codec: audioStream.codec_name,
-				duration: parseFloat(audioStream.duration) || result.duration,
-				bitrate: audioStream.bit_rate,
-			}
-		}
-
+		const result = await probeFile(validFilePath)
 		console.log('[runFfprobe] Final result:', JSON.stringify(result, null, 2))
 		console.log('[runFfprobe] RETURNING RESULT')
 		return result
@@ -226,7 +256,16 @@ export async function applyFaststart(inputPath: string): Promise<FaststartResult
 			tempFile,
 		])
 
-		const { renameSync, unlinkSync, copyFileSync } = await import('fs')
+		const result = await probeFile(tempFile)
+		if (!result?.hasVideo || !result.hasAudio || !(await canDecodeVideoFrame(tempFile))) {
+			const { unlinkSync } = await import('fs')
+			try { unlinkSync(tempFile) } catch {}
+			const message = 'Faststart output is missing a playable video or audio stream; keeping original file'
+			console.warn('[ffmpeg]', message, result)
+			return { success: false, outputPath: inputPath, error: message }
+		}
+
+		const { unlinkSync, copyFileSync } = await import('fs')
 		copyFileSync(tempFile, inputPath)
 		unlinkSync(tempFile)
 

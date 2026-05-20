@@ -1,6 +1,8 @@
 import { spawn } from 'child_process'
 import { readdirSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
+import { getYtDlpNetworkArgs, getYtDlpProxy } from '../config/network'
+import { extractYouTubeVideoId, extractVkVideoId, normalizeVkVideoUrl } from './platform-parser'
 
 export interface YtDlpProgress {
 	percent: number
@@ -18,7 +20,39 @@ export interface YtDlpResult {
 
 type ProgressCallback = (progress: YtDlpProgress) => void
 
+const SAFE_FORMAT_SELECTOR = 'bv*[vcodec!=none]+ba[acodec!=none]/b[vcodec!=none][acodec!=none]'
+const VALID_QUALITIES = new Set(['144', '240', '360', '480', '720', '1080', '1440', '2160'])
 
+function normalizeQuality(quality?: string): string | undefined {
+	if (!quality || quality === 'best' || quality === 'choose') {
+		return undefined
+	}
+
+	const normalized = quality.toLowerCase().replace(/p$/, '')
+	return VALID_QUALITIES.has(normalized) ? normalized : undefined
+}
+
+function isRutubeUrl(url: string): boolean {
+	try {
+		const hostname = new URL(url).hostname.toLowerCase()
+		return hostname === 'rutube.ru' || hostname.endsWith('.rutube.ru')
+	} catch {
+		return /rutube\.ru/i.test(url)
+	}
+}
+
+function getDownloadUrl(url: string): string {
+	const youtubeId = extractYouTubeVideoId(url)
+	if (youtubeId) {
+		return `https://www.youtube.com/watch?v=${youtubeId}`
+	}
+
+	if (extractVkVideoId(url)) {
+		return normalizeVkVideoUrl(url)
+	}
+
+	return url
+}
 
 const PROGRESS_REGEX = /\[download\]\s+(\d+\.?\d*)%\s+of\s+([\d.]+[KMG]iB)(?:\s+at\s+([\d.]+[KMG]iB\/s))?(?:\s+ETA\s+([\d:]+))?/
 
@@ -34,23 +68,37 @@ function parseProgressLine(line: string): YtDlpProgress | null {
 	}
 }
 
-export function buildFormatSelector(quality?: string, attempt = 0): string {
-	if (quality && quality !== 'best') {
-		const qNum = parseInt(quality.replace('p', ''), 10)
-		const selectors = [
-			`best[height<=${qNum}]`,
-			`bestvideo[height<=${qNum}]+bestaudio/best[height<=${qNum}]`,
-			`bestvideo[height<=${qNum}]/best[height<=${qNum}]`,
+export function buildFormatSelector(quality?: string, attempt = 0, preferMp4 = false): string {
+	const normalizedQuality = normalizeQuality(quality)
+
+	if (normalizedQuality) {
+		const qNum = parseInt(normalizedQuality, 10)
+		const mp4Selectors = [
+			`bv*[height<=${qNum}][ext=mp4][vcodec^=avc1]+ba[ext=m4a][acodec!=none]/b[height<=${qNum}][ext=mp4][vcodec!=none][acodec!=none]`,
 		]
+		const selectors = [
+			`bv*[height<=${qNum}][vcodec!=none]+ba[acodec!=none]/b[height<=${qNum}][vcodec!=none][acodec!=none]`,
+			`bv*[height<=${qNum}][vcodec!=none]+ba/b[height<=${qNum}][vcodec!=none][acodec!=none]`,
+			SAFE_FORMAT_SELECTOR,
+		]
+		if (preferMp4) {
+			selectors.unshift(...mp4Selectors)
+		}
 		return selectors[Math.min(attempt, selectors.length - 1)] ?? selectors[0]!
 	}
 
-	const selectors = [
-		'best',
-		'bestvideo+bestaudio/best',
-		'bestvideo/best',
+	const mp4Selectors = [
+		'bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a][acodec!=none]/b[ext=mp4][vcodec!=none][acodec!=none]',
 	]
-	return selectors[Math.min(attempt, selectors.length - 1)] ?? 'best'
+	const selectors = [
+		SAFE_FORMAT_SELECTOR,
+		'bv*[vcodec!=none]+ba/b[vcodec!=none][acodec!=none]',
+		'b[vcodec!=none][acodec!=none]',
+	]
+	if (preferMp4) {
+		selectors.unshift(...mp4Selectors)
+	}
+	return selectors[Math.min(attempt, selectors.length - 1)] ?? SAFE_FORMAT_SELECTOR
 }
 
 export async function downloadWithYtDlp(
@@ -58,22 +106,46 @@ export async function downloadWithYtDlp(
 	outputDir: string,
 	quality?: string,
 	onProgress?: ProgressCallback,
+	attempt = 0,
 ): Promise<YtDlpResult> {
 	return new Promise(resolve => {
 		let stdoutData = ''
 		let stderrData = ''
 
 		const outputTemplate = join(outputDir, 'video.%(ext)s')
+		const downloadUrl = getDownloadUrl(url)
+		const isRutube = isRutubeUrl(downloadUrl)
+		const isYouTube = !!extractYouTubeVideoId(url)
+		const isVkVideo = !!extractVkVideoId(url)
+		const formatSelector = buildFormatSelector(quality, attempt, isYouTube || isVkVideo)
 
 		const args = [
-			'-f', 'best',
+			'--newline',
+			'--progress',
+			'--no-part',
+			...getYtDlpNetworkArgs(),
+			'--socket-timeout', '20',
+			'--retries', '3',
+			'--fragment-retries', '3',
+			'-f', formatSelector,
 			'-o', outputTemplate,
 			'--no-mtime',
-			url,
 		]
+
+		if (isRutube) {
+			args.push('--hls-use-mpegts')
+		}
+
+		if (isYouTube) {
+			args.push('--no-playlist')
+		}
+
+		args.push(downloadUrl)
 		
 		console.log('[yt-dlp] Starting download')
-		console.log('[yt-dlp] Using format: default')
+		console.log('[yt-dlp] Format selector:', formatSelector)
+		console.log('[yt-dlp] Download URL:', downloadUrl)
+		console.log('[yt-dlp] Proxy enabled:', !!getYtDlpProxy())
 		console.log('[yt-dlp] Command: yt-dlp ' + args.join(' '))
 		console.log('[yt-dlp] Working directory:', outputDir)
 
@@ -119,28 +191,32 @@ export async function downloadWithYtDlp(
 			if (code === 0) {
 				await new Promise(r => setTimeout(r, 10000))
 				const files = readdirSync(outputDir)
-					.filter(f => f.endsWith('.mp4') || f.endsWith('.ts') || f.endsWith('.m4a'))
-					.map(f => ({ name: f, path: join(outputDir, f) }))
+					.filter(f => /\.(mp4|mkv|webm|mov|ts)$/i.test(f))
+					.map(f => {
+						const path = join(outputDir, f)
+						const stat = statSync(path)
+						return { name: f, path, size: stat.size, mtimeMs: stat.mtimeMs }
+					})
 					.filter(f => existsSync(f.path))
+					.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
 				if (files.length > 0) {
-				const file = files[files.length - 1]!
-				try {
-					const stat = statSync(file.path)
-					if (stat.size > 1000) {
-						await new Promise(r => setTimeout(r, 5000))
-						const newStat = statSync(file.path)
-						if (stat.size === newStat.size) {
-							console.log('[yt-dlp] File ready:', file.path, 'size:', newStat.size)
-							resolve({ success: true, filePath: file.path, quality: 'best' })
-							return
+					const file = files[0]!
+					try {
+						if (file.size > 1000) {
+							await new Promise(r => setTimeout(r, 5000))
+							const newStat = statSync(file.path)
+							if (file.size === newStat.size) {
+								console.log('[yt-dlp] File ready:', file.path, 'size:', newStat.size)
+								resolve({ success: true, filePath: file.path, quality: normalizeQuality(quality) || 'best' })
+								return
+							}
 						}
+					} catch (e) {
+						console.error('[yt-dlp] Error checking file:', e)
 					}
-				} catch (e) {
-					console.error('[yt-dlp] Error checking file:', e)
 				}
-			}
-			console.error('[yt-dlp] No output file found:', files.map(f => f.name))
+				console.error('[yt-dlp] No output file found:', files.map(f => f.name))
 				resolve({ success: false, error: 'No output file found' })
 			} else {
 				const errorMsg = stderrData.trim() || `yt-dlp failed with code ${code}`
@@ -170,7 +246,7 @@ export async function downloadWithRetry(
 			console.log(`[yt-dlp] Retry attempt ${attempt + 1}/${maxRetries}`)
 		}
 
-		const result = await downloadWithYtDlp(url, outputDir, quality, onProgress)
+		const result = await downloadWithYtDlp(url, outputDir, quality, onProgress, attempt)
 
 		if (result.success) {
 			return result
@@ -181,6 +257,7 @@ export async function downloadWithRetry(
 		if (attempt < maxRetries - 1) {
 			const waitTime = (attempt + 1) * 2000
 			console.log(`[yt-dlp] Waiting ${waitTime}ms before retry...`)
+			await new Promise(resolve => setTimeout(resolve, waitTime))
 		}
 	}
 
