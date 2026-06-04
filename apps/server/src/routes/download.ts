@@ -41,6 +41,7 @@ async function processDownload(sessionId: string, url: string, tempDir: string, 
 				})
 			},
 			3,
+			downloadSessionService.getAbortSignal(sessionId),
 		)
 		
 		console.log('========================================')
@@ -51,7 +52,14 @@ async function processDownload(sessionId: string, url: string, tempDir: string, 
 		if (!ytResult.success || !ytResult.filePath) {
 			console.error('[processDownload] yt-dlp failed!')
 			console.error('[processDownload] error:', ytResult.error)
+			if (downloadSessionService.getAbortSignal(sessionId)?.aborted) {
+				return
+			}
 			downloadSessionService.markError(sessionId, ytResult.error || 'yt-dlp download failed')
+			return
+		}
+
+		if (downloadSessionService.getAbortSignal(sessionId)?.aborted) {
 			return
 		}
 
@@ -179,4 +187,15 @@ export const downloadRoutes = new Elysia({ prefix: '/api/video' })
 		processDownload(sessionId, url, tempDir, quality)
 
 		return Response.json({ downloadId: sessionId })
+	})
+	.post('/cancel/:id', ({ params }) => {
+		const canceled = downloadSessionService.cancel(params.id)
+		if (!canceled) {
+			return Response.json(
+				{ error: 'Download not found or already finished', code: 'CANCEL_NOT_AVAILABLE' },
+				{ status: 404 },
+			)
+		}
+
+		return Response.json({ ok: true })
 	})

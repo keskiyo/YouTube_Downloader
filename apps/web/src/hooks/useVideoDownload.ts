@@ -53,6 +53,7 @@ interface UseVideoDownloadReturn {
 	isServerReady: boolean
 	fetchVideoInfo: (url: string) => Promise<void>
 	downloadVideo: (quality?: string) => Promise<void>
+	cancelDownload: () => Promise<void>
 	reset: () => void
 }
 
@@ -244,6 +245,25 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		}
 	}, [clearDownloadId, videoInfo])
 
+	const cancelDownload = useCallback(async () => {
+		const id = downloadIdRef.current
+		if (!id) return
+
+		try {
+			await fetch(`/api/video/cancel/${id}`, { method: 'POST' })
+		} catch (err) {
+			console.error('[useVideoDownload] Cancel error:', err)
+		} finally {
+			setIsDownloading(false)
+			setProgress({
+				percent: 0,
+				status: 'error',
+				error: 'Download canceled',
+			})
+			clearDownloadId()
+		}
+	}, [clearDownloadId])
+
 	const reset = useCallback(() => {
 		setVideoInfo(null)
 		setLoading(false)
@@ -265,6 +285,7 @@ export function useVideoDownload(): UseVideoDownloadReturn {
 		isServerReady,
 		fetchVideoInfo,
 		downloadVideo,
+		cancelDownload,
 		reset,
 	}
 }

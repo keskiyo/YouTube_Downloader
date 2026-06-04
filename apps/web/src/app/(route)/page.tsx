@@ -24,6 +24,7 @@ export default function MainPage({ platform }: { platform?: string }) {
 		isServerReady,
 		fetchVideoInfo,
 		downloadVideo,
+		cancelDownload,
 	} = useVideoDownload()
 
 	const searchUrlFromNavigation = (location.state as NavigationState | null)?.searchUrl
@@ -61,6 +62,7 @@ export default function MainPage({ platform }: { platform?: string }) {
 					selectedQuality={selectedQuality}
 					onQualityChange={setSelectedQuality}
 					onDownload={handleDownload}
+					onCancel={cancelDownload}
 					isDownloading={isDownloading}
 					progress={progress}
 					platform={platform}

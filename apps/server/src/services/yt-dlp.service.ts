@@ -20,6 +20,27 @@ export interface YtDlpResult {
 
 type ProgressCallback = (progress: YtDlpProgress) => void
 
+function delay(ms: number, signal?: AbortSignal): Promise<boolean> {
+	return new Promise(resolve => {
+		if (signal?.aborted) {
+			resolve(false)
+			return
+		}
+
+		const timer = setTimeout(() => {
+			signal?.removeEventListener('abort', onAbort)
+			resolve(true)
+		}, ms)
+
+		const onAbort = () => {
+			clearTimeout(timer)
+			resolve(false)
+		}
+
+		signal?.addEventListener('abort', onAbort, { once: true })
+	})
+}
+
 const SAFE_FORMAT_SELECTOR = 'bv*[vcodec!=none]+ba[acodec!=none]/b[vcodec!=none][acodec!=none]'
 const VALID_QUALITIES = new Set(['144', '240', '360', '480', '720', '1080', '1440', '2160'])
 
@@ -107,10 +128,18 @@ export async function downloadWithYtDlp(
 	quality?: string,
 	onProgress?: ProgressCallback,
 	attempt = 0,
+	signal?: AbortSignal,
 ): Promise<YtDlpResult> {
 	return new Promise(resolve => {
 		let stdoutData = ''
 		let stderrData = ''
+		let settled = false
+
+		const finish = (result: YtDlpResult) => {
+			if (settled) return
+			settled = true
+			resolve(result)
+		}
 
 		const outputTemplate = join(outputDir, 'video.%(ext)s')
 		const downloadUrl = getDownloadUrl(url)
@@ -150,6 +179,21 @@ export async function downloadWithYtDlp(
 		console.log('[yt-dlp] Working directory:', outputDir)
 
 		const proc = spawn('yt-dlp', args)
+		const abortDownload = () => {
+			console.log('[yt-dlp] Aborting download')
+			proc.kill('SIGTERM')
+			setTimeout(() => {
+				if (!proc.killed) proc.kill('SIGKILL')
+			}, 2000)
+			finish({ success: false, error: 'Download canceled' })
+		}
+
+		if (signal?.aborted) {
+			abortDownload()
+			return
+		}
+
+		signal?.addEventListener('abort', abortDownload, { once: true })
 
 		proc.stdout.on('data', data => {
 			const line = data.toString().trim()
@@ -186,10 +230,19 @@ export async function downloadWithYtDlp(
 		})
 
 		proc.on('close', async code => {
+			signal?.removeEventListener('abort', abortDownload)
 			console.log('[yt-dlp] Process exited with code:', code)
 
+			if (signal?.aborted) {
+				finish({ success: false, error: 'Download canceled' })
+				return
+			}
+
 			if (code === 0) {
-				await new Promise(r => setTimeout(r, 10000))
+				if (!(await delay(10000, signal))) {
+					finish({ success: false, error: 'Download canceled' })
+					return
+				}
 				const files = readdirSync(outputDir)
 					.filter(f => /\.(mp4|mkv|webm|mov|ts)$/i.test(f))
 					.map(f => {
@@ -204,11 +257,14 @@ export async function downloadWithYtDlp(
 					const file = files[0]!
 					try {
 						if (file.size > 1000) {
-							await new Promise(r => setTimeout(r, 5000))
+							if (!(await delay(5000, signal))) {
+								finish({ success: false, error: 'Download canceled' })
+								return
+							}
 							const newStat = statSync(file.path)
 							if (file.size === newStat.size) {
 								console.log('[yt-dlp] File ready:', file.path, 'size:', newStat.size)
-								resolve({ success: true, filePath: file.path, quality: normalizeQuality(quality) || 'best' })
+								finish({ success: true, filePath: file.path, quality: normalizeQuality(quality) || 'best' })
 								return
 							}
 						}
@@ -217,17 +273,18 @@ export async function downloadWithYtDlp(
 					}
 				}
 				console.error('[yt-dlp] No output file found:', files.map(f => f.name))
-				resolve({ success: false, error: 'No output file found' })
+				finish({ success: false, error: 'No output file found' })
 			} else {
 				const errorMsg = stderrData.trim() || `yt-dlp failed with code ${code}`
 				console.error('[yt-dlp] Error:', errorMsg)
-				resolve({ success: false, error: errorMsg })
+				finish({ success: false, error: errorMsg })
 			}
 		})
 
 		proc.on('error', err => {
+			signal?.removeEventListener('abort', abortDownload)
 			console.error('[yt-dlp] Spawn error:', err)
-			resolve({ success: false, error: err.message })
+			finish({ success: false, error: err.message })
 		})
 	})
 }
@@ -238,15 +295,20 @@ export async function downloadWithRetry(
 	quality?: string,
 	onProgress?: ProgressCallback,
 	maxRetries = 3,
+	signal?: AbortSignal,
 ): Promise<YtDlpResult> {
 	let lastError: string | undefined
 
 	for (let attempt = 0; attempt < maxRetries; attempt++) {
+		if (signal?.aborted) {
+			return { success: false, error: 'Download canceled' }
+		}
+
 		if (attempt > 0) {
 			console.log(`[yt-dlp] Retry attempt ${attempt + 1}/${maxRetries}`)
 		}
 
-		const result = await downloadWithYtDlp(url, outputDir, quality, onProgress, attempt)
+		const result = await downloadWithYtDlp(url, outputDir, quality, onProgress, attempt, signal)
 
 		if (result.success) {
 			return result
@@ -257,7 +319,9 @@ export async function downloadWithRetry(
 		if (attempt < maxRetries - 1) {
 			const waitTime = (attempt + 1) * 2000
 			console.log(`[yt-dlp] Waiting ${waitTime}ms before retry...`)
-			await new Promise(resolve => setTimeout(resolve, waitTime))
+			if (!(await delay(waitTime, signal))) {
+				return { success: false, error: 'Download canceled' }
+			}
 		}
 	}
 

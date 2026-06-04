@@ -11,6 +11,7 @@ interface SearchSectionProps {
 	selectedQuality: VideoQuality
 	onQualityChange: (quality: VideoQuality) => void
 	onDownload: () => void
+	onCancel: () => void
 	isDownloading?: boolean
 	progress?: DownloadProgress | null
 	platform?: string
@@ -24,6 +25,7 @@ export function SearchSection({
 	selectedQuality,
 	onQualityChange,
 	onDownload,
+	onCancel,
 	isDownloading,
 	progress,
 	platform,
@@ -63,6 +65,7 @@ export function SearchSection({
 					<VideoResult
 						video={videoInfo}
 						onDownload={onDownload}
+						onCancel={onCancel}
 						loading={isDownloading}
 						progress={progress}
 						disabled={!isServerReady}
