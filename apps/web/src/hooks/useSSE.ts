@@ -22,6 +22,7 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 	const eventSourceRef = useRef<EventSource | null>(null)
 	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const isMountedRef = useRef(true)
+	const connectRef = useRef<() => void>(() => {})
 
 	const connect = useCallback(() => {
 		if (!url || !isMountedRef.current) return
@@ -56,7 +57,7 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 				console.log(`[SSE] Reconnecting in ${reconnectInterval}ms...`)
 				reconnectTimeoutRef.current = setTimeout(() => {
 					if (isMountedRef.current) {
-						connect()
+						connectRef.current()
 					}
 				}, reconnectInterval)
 			}
@@ -81,6 +82,7 @@ export function useSSE<T>(url: string | null, options: SSEOptions<T>) {
 
 	useEffect(() => {
 		isMountedRef.current = true
+		connectRef.current = connect
 		connect()
 
 		return () => {

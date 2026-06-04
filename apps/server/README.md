@@ -1,15 +1,11 @@
-# server
+# Server
 
-To install dependencies:
+Elysia API server for video metadata, downloads, SSE progress and file delivery.
 
-```bash
-bun install
-```
-
-To run:
+Run from the repository root:
 
 ```bash
-bun run index.ts
+bun run dev:server
 ```
 
-This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+The server runs on `http://localhost:3001`.

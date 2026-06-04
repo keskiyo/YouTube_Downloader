@@ -89,15 +89,36 @@ bun run dev
 http://localhost:5173
 ```
 
+## Desktop-режим
+
+Приложение можно запускать как desktop-окно через Electron. Desktop-режим не переписывает backend и frontend: Electron поднимает существующие Bun server + Vite web и открывает локальное окно приложения.
+
+Запуск из терминала:
+
+```bash
+bun run desktop
+```
+
+Запуск двойным кликом на Windows:
+
+```text
+desktop/YouTube Downloader.cmd
+```
+
+Для удобства можно создать ярлык на этот `.cmd` файл и вынести его на рабочий стол.
+
+В desktop-режиме сохраняются те же требования: `yt-dlp`, `ffmpeg` и `ffprobe` должны быть доступны в `PATH`. Для YouTube в ограниченных сетях должен работать Zapret или должен быть указан `YTDLP_PROXY`.
+
 ## Команды
 
-| Команда               | Описание                                   |
-| --------------------- | ------------------------------------------ |
-| `bun run dev`         | Запустить frontend и backend одновременно  |
-| `bun run dev:web`     | Запустить только frontend на порту `5173`  |
-| `bun run dev:server`  | Запустить только backend на порту `3001`   |
-| `bun run build:web`   | Собрать frontend                           |
-| `bun run preview:web` | Открыть preview production-сборки frontend |
+| Команда                   | Описание                                   |
+| ------------------------- | ------------------------------------------ |
+| `bun run dev`             | Запустить frontend и backend одновременно  |
+| `bun run desktop`         | Запустить desktop-приложение через Electron |
+| `bun run dev:web`         | Запустить только frontend на порту `5173`  |
+| `bun run dev:server`      | Запустить только backend на порту `3001`   |
+| `bun run build:web`       | Собрать frontend                           |
+| `bun run preview:web`     | Открыть preview production-сборки frontend |
 
 ## API
 
@@ -129,6 +150,9 @@ youtube_downloader/
 │   │       ├── hooks/
 │   │       └── types/
 │   └── downloads_files/
+├── desktop/
+│   ├── main.cjs
+│   └── YouTube Downloader.cmd
 ├── package.json
 ├── tsconfig.json
 └── README.md

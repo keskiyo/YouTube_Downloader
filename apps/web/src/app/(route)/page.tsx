@@ -26,17 +26,7 @@ export default function MainPage({ platform }: { platform?: string }) {
 		downloadVideo,
 	} = useVideoDownload()
 
-	const [visibleError, setVisibleError] = useState<string | null>(null)
 	const searchUrlFromNavigation = (location.state as NavigationState | null)?.searchUrl
-
-	useEffect(() => {
-		if (error) {
-			setVisibleError(error)
-			const timer = setTimeout(() => setVisibleError(null), 3000)
-			//  Очистка таймера: сработает при изменении error или размонтировании компонента
-			return () => clearTimeout(timer)
-		}
-	}, [error])
 
 	useEffect(() => {
 		if (searchUrlFromNavigation) {
@@ -79,9 +69,9 @@ export default function MainPage({ platform }: { platform?: string }) {
 				<InstructionBlock />
 				<SeoText />
 			</div>
-			{visibleError && (
+			{error && (
 				<div className='fixed top-30 left-1/2 -translate-x-1/2 px-4 py-2 bg-red-500/90 text-white rounded-lg'>
-					{visibleError}
+					{error}
 				</div>
 			)}
 		</>

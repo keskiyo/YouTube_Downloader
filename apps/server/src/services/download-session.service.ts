@@ -1,7 +1,11 @@
 import { randomUUID } from 'crypto'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { fileURLToPath } from 'url'
 import type { DownloadProgress, DownloadStatus } from '../types/progress'
+
+const currentDir = dirname(fileURLToPath(import.meta.url))
+const downloadsDir = join(currentDir, '..', '..', '..', 'downloads_files')
 
 export interface Session {
 	tempDir: string
@@ -13,7 +17,7 @@ export interface Session {
 class DownloadSessionService {
 	private sessions = new Map<string, Session>()
 
-	private readonly baseTemp = 'D:\\1NeiroSlop\\YouTube_Downloader\\apps\\downloads_files'
+	private readonly baseTemp = downloadsDir
 
 	constructor() {
 		if (!existsSync(this.baseTemp)) {

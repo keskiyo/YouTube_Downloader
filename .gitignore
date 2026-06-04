@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+release
 *.tgz
 
 # code coverage
@@ -13,6 +14,7 @@ coverage
 # logs
 logs
 _.log
+*.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files
@@ -35,3 +37,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 AGENTS.md
 setup.txt
+
+# generated downloads
+apps/downloads_files/
+apps/server/test_download/

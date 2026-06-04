@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="YouTube Downloader">
+  <rect x="15" y="15" width="226" height="226" rx="48" fill="#18a8df"/>
+  <circle cx="128" cy="128" r="75" fill="none" stroke="#fff" stroke-width="11"/>
+  <path fill="#fff" d="M107 88v80l67-40z"/>
+</svg>
