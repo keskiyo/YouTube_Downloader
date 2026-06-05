@@ -35,9 +35,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 
-AGENTS.md
 setup.txt
 
 # generated downloads
 apps/downloads_files/
 apps/server/test_download/
+
+AGENTS.md

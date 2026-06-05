@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'react-toastify'
 import { InstructionBlock } from '../../components/Instruction/InstructionBlock'
 import { SearchSection } from '../../components/Main/SearchSection'
 import { SeoText } from '../../components/Seo/SeoText'
@@ -13,6 +14,7 @@ interface NavigationState {
 
 export default function MainPage({ platform }: { platform?: string }) {
 	const [selectedQuality, setSelectedQuality] = useState<VideoQuality>('best')
+	const lastProgressStatusRef = useRef<string | null>(null)
 	const location = useLocation()
 	const navigate = useNavigate()
 	const {
@@ -36,6 +38,42 @@ export default function MainPage({ platform }: { platform?: string }) {
 		}
 	}, [fetchVideoInfo, location.pathname, navigate, searchUrlFromNavigation])
 
+	useEffect(() => {
+		if (!error) {
+			return
+		}
+
+		toast.error(error, {
+			toastId: `video-error-${error}`,
+		})
+	}, [error])
+
+	useEffect(() => {
+		if (!progress?.status || progress.status === lastProgressStatusRef.current) {
+			return
+		}
+
+		lastProgressStatusRef.current = progress.status
+
+		if (progress.status === 'downloading') {
+			toast.info('Загрузка началась', {
+				toastId: 'video-download-started',
+			})
+		}
+
+		if (progress.status === 'merging') {
+			toast.info('Собираем MP4-файл', {
+				toastId: 'video-download-merging',
+			})
+		}
+
+		if (progress.status === 'finished') {
+			toast.success('Файл готов к сохранению', {
+				toastId: 'video-download-finished',
+			})
+		}
+	}, [progress?.status])
+
 	const handleSearch = async (url: string) => {
 		const detectedPlatform = getPlatformByVideoUrl(url)
 
@@ -54,7 +92,7 @@ export default function MainPage({ platform }: { platform?: string }) {
 
 	return (
 		<>
-			<div className='max-w-4xl mx-auto'>
+			<div>
 				<SearchSection
 					onSearch={handleSearch}
 					videoInfo={videoInfo}
@@ -71,11 +109,6 @@ export default function MainPage({ platform }: { platform?: string }) {
 				<InstructionBlock />
 				<SeoText />
 			</div>
-			{error && (
-				<div className='fixed top-30 left-1/2 -translate-x-1/2 px-4 py-2 bg-red-500/90 text-white rounded-lg'>
-					{error}
-				</div>
-			)}
 		</>
 	)
 }

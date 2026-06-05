@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { VideoQuality } from '../../types'
 
@@ -17,16 +18,20 @@ const allQualities: { value: VideoQuality; label: string }[] = [
 	{ value: '360', label: '360p' },
 ]
 
-export function QualitySelector({ value, onChange, availableQualities = [] }: QualitySelectorProps) {
+export function QualitySelector({
+	value,
+	onChange,
+	availableQualities = [],
+}: QualitySelectorProps) {
 	const [open, setOpen] = useState(false)
 	const containerRef = useRef<HTMLDivElement>(null)
 
 	const filteredQualities = availableQualities.length > 0
-		? allQualities.filter(q => {
-				if (q.value === 'best') return true
-				const qNum = parseInt(q.value)
-				const availNums = availableQualities.map(a => parseInt(a))
-				return availNums.some(av => av >= qNum)
+		? allQualities.filter(quality => {
+				if (quality.value === 'best') return true
+				const target = parseInt(quality.value)
+				const available = availableQualities.map(item => parseInt(item))
+				return available.some(item => item >= target)
 			})
 		: allQualities
 
@@ -39,38 +44,40 @@ export function QualitySelector({ value, onChange, availableQualities = [] }: Qu
 				setOpen(false)
 			}
 		}
+
 		document.addEventListener('mousedown', handleClickOutside)
-		return () => {
-			document.removeEventListener('mousedown', handleClickOutside)
-		}
+		return () => document.removeEventListener('mousedown', handleClickOutside)
 	}, [])
 
-	const selected = filteredQualities.find(q => q.value === value) || filteredQualities[0]
+	const selected = filteredQualities.find(quality => quality.value === value) || filteredQualities[0]
 
 	return (
 		<div className='relative' ref={containerRef}>
 			<button
+				type='button'
 				onClick={() => setOpen(!open)}
-				className='px-4 py-2 bg-bg-secondary border border-border-color text-white rounded-lg hover:border-primary-blue transition-colors min-w-[120px]'
+				className='focus-ring inline-flex h-11 min-w-32 items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-sm font-semibold text-white transition-colors hover:border-primary-blue/60'
 			>
-				{selected.label}
+				<span>{selected.label}</span>
+				<ChevronDown className={`h-4 w-4 text-text-secondary transition-transform ${open ? 'rotate-180' : ''}`} />
 			</button>
 			{open && (
-				<div className='absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-bg-secondary border border-border-color rounded-lg shadow-lg overflow-hidden z-10'>
-					{filteredQualities.map(q => (
+				<div className='absolute right-0 top-full z-20 mt-2 w-40 overflow-hidden rounded-xl border border-white/10 bg-[#0d1520] p-1 shadow-2xl'>
+					{filteredQualities.map(quality => (
 						<button
-							key={q.value}
+							key={quality.value}
+							type='button'
 							onClick={() => {
-								onChange(q.value)
+								onChange(quality.value)
 								setOpen(false)
 							}}
-							className={`w-full px-4 py-2 text-left hover:bg-primary-blue transition-colors flex justify-center items-center ${
-								q.value === value
-									? 'text-primary-blue'
-									: 'text-white'
+							className={`focus-ring flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
+								quality.value === value
+									? 'bg-primary-blue/[0.16] text-primary-blue'
+									: 'text-white hover:bg-white/[0.06]'
 							}`}
 						>
-							{q.label}
+							<span>{quality.label}</span>
 						</button>
 					))}
 				</div>

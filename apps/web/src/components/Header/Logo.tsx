@@ -1,19 +1,28 @@
-import { CheckCircle2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export function Logo() {
 	const navigate = useNavigate()
+
 	return (
-		<div className='flex items-center gap-2'>
-			<div className='w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center'>
-				<CheckCircle2 className='w-5 h-5 text-primary-blue' />
-			</div>
-			<button onClick={() => navigate('/')} className='cursor-pointer'>
-				<span className='flex text-sm font-bold tracking-wider text-text-primary gap-x-2'>
-					DOWNLOADER_VIDEO.COM
-					<p className='flex text-[9px] '>RU</p>
+		<button
+			type='button'
+			onClick={() => navigate('/')}
+			className='focus-ring flex items-center gap-3 rounded-xl'
+			aria-label='На главную'
+		>
+			<img
+				src='/app-icon.png'
+				alt=''
+				className='h-10 w-10 rounded-xl shadow-[0_10px_30px_rgba(21,168,223,0.28)]'
+			/>
+			<span className='flex flex-col items-start leading-none'>
+				<span className='text-sm font-semibold tracking-[0.18em] text-white'>
+					DOWNLOADER
 				</span>
-			</button>
-		</div>
+				<span className='mt-1 text-[11px] font-medium uppercase tracking-[0.22em] text-text-secondary'>
+					Video tools
+				</span>
+			</span>
+		</button>
 	)
 }

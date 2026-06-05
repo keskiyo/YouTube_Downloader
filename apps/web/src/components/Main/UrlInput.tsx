@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Search } from 'lucide-react'
+import { Loader2, Search } from 'lucide-react'
 import { useState } from 'react'
 import type { VideoInfo } from '../../types'
 
@@ -12,55 +12,46 @@ interface UrlInputProps {
 export function UrlInput({ onSubmit, loading, videoInfo }: UrlInputProps) {
 	const [url, setUrl] = useState('')
 
-	const handleSubmit = (e: React.SyntheticEvent) => {
-		e.preventDefault()
-		if (url.trim()) {
-			onSubmit(url.trim())
-		}
+	const handleSubmit = (event: React.SyntheticEvent) => {
+		event.preventDefault()
+		if (url.trim()) onSubmit(url.trim())
 	}
 
 	return (
-		<form onSubmit={handleSubmit} className='w-full max-w-2xl'>
-			<div className='relative'>
+		<form onSubmit={handleSubmit} className='w-full'>
+			<label className='mb-2 block text-sm font-medium text-white'>
+				Ссылка на видео
+			</label>
+			<div className='flex flex-col gap-3 sm:flex-row'>
 				<input
 					type='text'
 					value={url}
-					onChange={(e) => setUrl(e.target.value)}
-					placeholder='Вставьте ссылку на видео...'
-					className='w-full px-6 py-4 bg-black border border-border-color rounded-full text-white placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary-blue transition-all'
+					onChange={event => setUrl(event.target.value)}
+					placeholder='https://www.youtube.com/watch?v=...'
+					className='focus-ring h-[52px] min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-white placeholder:text-text-secondary/70 transition-colors hover:border-white/20'
 					disabled={loading}
 				/>
 				<button
 					type='submit'
 					disabled={loading || !url.trim()}
-					className='absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2.5 bg-primary-blue text-white rounded-full hover:bg-primary-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 z-50 cursor-pointer'
+					className='focus-ring inline-flex h-[52px] min-w-[7.5rem] items-center justify-center gap-2 rounded-xl bg-primary-blue px-5 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(21,168,223,0.26)] transition-colors hover:bg-[#1297ca] disabled:cursor-not-allowed disabled:opacity-50'
 				>
 					{loading ? (
-						<motion.div
-							animate={{ rotate: 360 }}
-							transition={{
-								duration: 1,
-								repeat: Infinity,
-								ease: 'linear',
-							}}
-							className='w-5 h-5 border-2 border-white border-t-transparent rounded-full'
-						/>
+						<Loader2 className='h-4 w-4 animate-spin' />
 					) : (
-						<>
-							<Search className='w-4 h-4' />
-							<span>Найти</span>
-						</>
+						<Search className='h-4 w-4' />
 					)}
+					<span>{loading ? 'Поиск' : 'Найти'}</span>
 				</button>
 			</div>
 			{videoInfo && !loading && (
-				<motion.div
-					initial={{ opacity: 0, y: 10 }}
+				<motion.p
+					initial={{ opacity: 0, y: 8 }}
 					animate={{ opacity: 1, y: 0 }}
-					className='mt-4 text-center text-text-secondary text-sm'
+					className='mt-3 text-sm text-text-secondary'
 				>
-					Видео найдено! Прокрутите вниз для выбора качества и скачивания.
-				</motion.div>
+					Видео найдено. Проверьте качество и нажмите скачать.
+				</motion.p>
 			)}
 		</form>
 	)

@@ -1,68 +1,17 @@
-import { motion } from 'framer-motion'
-import { Download, Hd, MonitorDown, Video } from 'lucide-react'
+import { Clipboard, Download, FileCheck, Hd, Link, Video } from 'lucide-react'
 
 interface StepIllustrationProps {
 	step: number
 }
 
+const icons = [Video, Clipboard, Link, Hd, Download, FileCheck]
+
 export function StepIllustration({ step }: StepIllustrationProps) {
-	const illustrations = [
-		<div
-			key={1}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center'
-		>
-			<div className='text-xs text-white/50'>
-				{' '}
-				<Video />
-			</div>
-		</div>,
-		<div
-			key={2}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center'
-		>
-			<div className='text-xs text-white/50'>COPY</div>
-		</div>,
-		<div
-			key={3}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center'
-		>
-			<div className='w-8 h-2 bg-gray-600 rounded-full' />
-		</div>,
-		<div
-			key={4}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center gap-1'
-		>
-			<div className='text-xs text-white/50'>
-				<Hd />
-			</div>
-		</div>,
-		<div
-			key={5}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center'
-		>
-			<div className='text-xs text-white/50'>
-				<Download />
-			</div>
-		</div>,
-		<div
-			key={6}
-			className='w-16 h-12 bg-gray-800 rounded-lg flex items-center justify-center'
-		>
-			<div className='text-xs text-white/50'>
-				{' '}
-				<MonitorDown />{' '}
-			</div>
-		</div>,
-	]
+	const Icon = icons[step - 1] ?? Video
 
 	return (
-		<motion.div
-			initial={{ scale: 0.8, opacity: 0 }}
-			whileInView={{ scale: 1, opacity: 1 }}
-			viewport={{ once: true }}
-			className='shrink-0'
-		>
-			{illustrations[step - 1]}
-		</motion.div>
+		<div className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary-blue/25 bg-primary-blue/10'>
+			<Icon className='h-5 w-5 text-primary-blue' />
+		</div>
 	)
 }

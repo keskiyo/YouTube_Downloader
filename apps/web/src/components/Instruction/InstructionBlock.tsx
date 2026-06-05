@@ -4,25 +4,27 @@ import { StepCard } from './StepCard'
 
 export function InstructionBlock() {
 	return (
-		<section className='py-16 px-4'>
-			<div className='max-w-2xl mx-auto'>
-				<motion.h2
-					initial={{ opacity: 0, y: -20 }}
-					whileInView={{ opacity: 1, y: 0 }}
-					viewport={{ once: true }}
-					className='text-2xl md:text-3xl font-bold text-white text-center mb-4'
-				>
-					Как использовать наш сервис ?
-				</motion.h2>
-				<motion.p
-					initial={{ opacity: 0 }}
-					whileInView={{ opacity: 1 }}
-					viewport={{ once: true }}
-					className='text-text-secondary text-center mb-12'
-				>
-					Для того чтобы скачать видеофайл сделайте следующие шаги:
-				</motion.p>
-				<div>
+		<section className='px-4 py-12'>
+			<div className='mx-auto max-w-6xl'>
+				<div className='mb-8 max-w-2xl'>
+					<motion.h2
+						initial={{ opacity: 0, y: 12 }}
+						whileInView={{ opacity: 1, y: 0 }}
+						viewport={{ once: true }}
+						className='text-2xl font-semibold text-white md:text-3xl'
+					>
+						Как работает загрузка
+					</motion.h2>
+					<motion.p
+						initial={{ opacity: 0 }}
+						whileInView={{ opacity: 1 }}
+						viewport={{ once: true }}
+						className='mt-3 text-base leading-7 text-text-secondary'
+					>
+						Процесс рассчитан на один понятный сценарий: ссылка, качество, готовый файл.
+					</motion.p>
+				</div>
+				<div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
 					{instructionSteps.map(step => (
 						<StepCard key={step.id} step={step} />
 					))}

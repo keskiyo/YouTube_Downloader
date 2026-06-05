@@ -1,61 +1,69 @@
 # YouTube Downloader
 
-Веб-приложение для скачивания видео с YouTube, Rutube и VK Video. Проект состоит из React-фронтенда и Elysia API-сервера на Bun. Загрузка выполняется через `yt-dlp`, а проверка и подготовка итогового файла — через `ffmpeg`/`ffprobe`.
+Desktop and web video downloader for YouTube, Rutube, and VK Video.
 
-## Возможности
+The project uses a React/Vite frontend, an Elysia API server on Bun, and an Electron desktop wrapper. Downloads are handled by `yt-dlp`; final MP4 validation and compatibility processing are handled by `ffmpeg` and `ffprobe`.
 
-- Скачивание видео с YouTube, Rutube и VK Video.
-- Выбор качества: `144p`, `240p`, `360p`, `480p`, `720p`, `1080p`, `1440p`, `2160p` или лучшее доступное.
-- Автоматическое объединение видео и аудио в корректный MP4.
-- Проверка итогового файла на наличие видео- и аудиопотока.
-- Прогресс скачивания через SSE.
-- Отмена активной загрузки через API.
-- Автоматическая очистка устаревших временных файлов.
-- Поддержка ссылок YouTube с параметрами плейлиста, например `watch?v=...&list=...`.
-- Поддержка ссылок VK Video вида `https://vkvideo.ru/video-228275494_456239115`.
-- Специальная обработка Rutube HLS, чтобы итоговый файл открывался с картинкой и звуком.
+## Features
 
-## YouTube и Zapret
+- Download videos from YouTube, Rutube, and VK Video.
+- Choose quality: `144p`, `240p`, `360p`, `480p`, `720p`, `1080p`, `1440p`, `2160p`, or best available.
+- Correct video+audio MP4 output.
+- Rutube HLS handling through `ffmpeg`.
+- YouTube playlist/watch URLs are normalized to a single video.
+- VK Video links such as `https://vkvideo.ru/video-228275494_456239115` are supported.
+- Real-time download progress through SSE.
+- Active download cancellation.
+- Finished-file validation with `ffprobe`.
+- Automatic cleanup of stale temporary files.
+- Desktop launch through Electron and a Windows shortcut.
+- Toast notifications for errors and download states.
+- Responsive dark UI with a custom desktop scrollbar.
 
-Для скачивания YouTube из сетей, где доступ к YouTube ограничен, приложение может работать через системный обход Zapret.
+## Supported Platforms
 
-Zapret если он запущен как системный сервис `winws.exe`, оставьте `YTDLP_PROXY` пустым:
+| Platform | Status |
+| --- | --- |
+| YouTube | Supported |
+| Rutube | Supported |
+| VK Video / vkvideo.ru | Supported |
+
+## YouTube And Zapret
+
+For networks where YouTube is restricted, the app can work through a system-wide Zapret setup.
+
+If Zapret is running as a system service, leave `YTDLP_PROXY` empty and force IPv4:
 
 ```env
 YTDLP_PROXY=
 YTDLP_FORCE_IPV4=true
 ```
 
-Проверьте доступ к YouTube из PowerShell:
+Check YouTube access from PowerShell:
 
 ```powershell
 curl.exe -4 -I --max-time 20 https://www.youtube.com
 ```
 
-Если команда возвращает `HTTP/1.1 200 OK`, `yt-dlp` и приложение смогут использовать этот системный обход. Если у вас есть именно HTTP/SOCKS proxy, укажите его отдельно:
+If the response contains `HTTP/1.1 200 OK`, `yt-dlp` and the app should be able to use the same system route.
+
+If you use a dedicated HTTP/SOCKS proxy instead of system-wide Zapret, set it explicitly:
 
 ```env
 YTDLP_PROXY=socks5://127.0.0.1:1080
 ```
 
-## Стек
+Do not commit real local proxy values to the repository.
 
-| Часть       | Технологии                   |
-| ----------- | ---------------------------- |
-| Runtime     | Bun                          |
-| Frontend    | Vite, React 19, React Router |
-| Backend     | Elysia                       |
-| Video tools | yt-dlp, ffmpeg, ffprobe      |
-| Язык        | TypeScript                   |
-
-## Требования
+## Requirements
 
 - Bun 1.x+
-- yt-dlp
-- ffmpeg и ffprobe
-- Для YouTube в ограниченных сетях: рабочий Zapret или HTTP/SOCKS proxy
+- `yt-dlp`
+- `ffmpeg`
+- `ffprobe`
+- Optional for restricted YouTube access: Zapret or an HTTP/SOCKS proxy
 
-Проверка внешних инструментов:
+Verify external tools:
 
 ```bash
 yt-dlp --version
@@ -63,80 +71,116 @@ ffmpeg -version
 ffprobe -version
 ```
 
-## Установка
+## Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| Runtime | Bun |
+| Frontend | Vite, React 19, React Router |
+| Backend | Elysia |
+| Desktop | Electron |
+| Styling | Tailwind CSS |
+| Notifications | react-toastify |
+| Video tools | yt-dlp, ffmpeg, ffprobe |
+| Language | TypeScript |
+
+## Installation
 
 ```bash
 bun install
 ```
 
-Создайте или обновите `.env` в корне проекта:
+Create `.env` in the repository root or copy `.env.example`:
 
 ```env
 VITE_FRONTEND_URL=http://localhost:5173
 VITE_API_URL=http://localhost:3001
 
+# Leave empty when using system-wide Zapret.
+# Example: socks5://127.0.0.1:1080
 YTDLP_PROXY=
+
+# Recommended for YouTube when Zapret is used.
 YTDLP_FORCE_IPV4=true
 ```
 
-## Запуск
+## Development
+
+Start frontend and backend together:
 
 ```bash
 bun run dev
 ```
 
-После запуска откройте:
+Open:
 
 ```text
 http://localhost:5173
 ```
 
-## Desktop-режим
+Run only frontend:
 
-Приложение можно запускать как desktop-окно через Electron. Desktop-режим не переписывает backend и frontend: Electron поднимает существующие Bun server + Vite web и открывает локальное окно приложения.
+```bash
+bun run dev:web
+```
 
-Запуск из терминала:
+Run only backend:
+
+```bash
+bun run dev:server
+```
+
+## Desktop App
+
+Start the desktop wrapper from terminal:
 
 ```bash
 bun run desktop
 ```
 
-Запуск двойным кликом на Windows:
+On Windows, you can launch the desktop app by double-clicking:
 
 ```text
 desktop/YouTube Downloader.cmd
 ```
 
-Для удобства можно создать ярлык на этот `.cmd` файл и вынести его на рабочий стол.
+To create a desktop shortcut with the project icon:
 
-В desktop-режиме сохраняются те же требования: `yt-dlp`, `ffmpeg` и `ffprobe` должны быть доступны в `PATH`. Для YouTube в ограниченных сетях должен работать Zapret или должен быть указан `YTDLP_PROXY`.
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop/create-desktop-shortcut.ps1
+```
 
-## Команды
+The desktop app uses the same frontend and backend behavior as the web app. `yt-dlp`, `ffmpeg`, and `ffprobe` must still be available in `PATH`.
 
-| Команда                   | Описание                                   |
-| ------------------------- | ------------------------------------------ |
-| `bun run dev`             | Запустить frontend и backend одновременно  |
-| `bun run desktop`         | Запустить desktop-приложение через Electron |
-| `bun run dev:web`         | Запустить только frontend на порту `5173`  |
-| `bun run dev:server`      | Запустить только backend на порту `3001`   |
-| `bun run build:web`       | Собрать frontend                           |
-| `bun run preview:web`     | Открыть preview production-сборки frontend |
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `bun install` | Install dependencies |
+| `bun run dev` | Start frontend and backend |
+| `bun run desktop` | Start Electron desktop app |
+| `bun run dev:web` | Start frontend on port `5173` |
+| `bun run dev:server` | Start backend on port `3001` |
+| `bun run build:web` | Type-check and build frontend |
+| `bun run preview:web` | Preview frontend production build |
+| `bun --filter web lint` | Run frontend ESLint |
+| `bunx tsc -p apps/server/tsconfig.json` | Type-check backend |
 
 ## API
 
-| Endpoint                                  | Метод | Описание                    |
-| ----------------------------------------- | ----- | --------------------------- |
-| `/api/video/info?url=...`                 | GET   | Получить информацию о видео |
-| `/api/video/download?url=...&quality=720` | GET   | Начать скачивание           |
-| `/api/video/cancel/:id`                   | POST  | Отменить активную загрузку  |
-| `/api/video/progress/:id`                 | GET   | SSE-прогресс скачивания     |
-| `/api/video/file/:id`                     | GET   | Скачать готовый файл        |
-| `/api/health`                             | GET   | Проверка состояния backend  |
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/health` | GET | Backend health check |
+| `/api/video/info?url=...` | GET | Read video metadata |
+| `/api/video/download?url=...&quality=720` | GET | Start a download |
+| `/api/video/progress/:id` | GET | SSE progress stream |
+| `/api/video/cancel/:id` | POST | Cancel active download |
+| `/api/video/file/:id` | GET | Download finished file |
 
-## Структура проекта
+## Project Structure
 
 ```text
-youtube_downloader/
+YouTube_Downloader/
 ├── apps/
 │   ├── server/
 │   │   └── src/
@@ -154,36 +198,45 @@ youtube_downloader/
 │   │       └── types/
 │   └── downloads_files/
 ├── desktop/
+│   ├── app-icon.ico
+│   ├── app-icon.png
+│   ├── create-desktop-shortcut.ps1
 │   ├── main.cjs
 │   └── YouTube Downloader.cmd
+├── AGENTS.md
 ├── package.json
-├── tsconfig.json
-└── README.md
+├── README.md
+└── tsconfig.json
 ```
 
-## Загрузки
+## Download Flow
 
-Временные файлы скачивания хранятся в:
+1. The client requests video metadata from the backend.
+2. The user selects quality and starts the download.
+3. The backend runs `yt-dlp` with progress output.
+4. The client listens to `/api/video/progress/:id` through SSE.
+5. The backend merges/prepares the MP4 and verifies it with `ffprobe`.
+6. The client receives the file only after the backend reports `finished`.
+
+Files are stored temporarily in:
 
 ```text
 apps/downloads_files/
 ```
 
-Сервер отдает файл пользователю только после завершения `yt-dlp`/`ffmpeg` и проверки, что файл не пустой и содержит корректные потоки. Старые временные папки удаляются при старте сервера, а зависшие активные сессии очищаются по TTL.
+The app does not use SQLite because download history and user data are not persisted. The finished file is delivered directly to the user.
 
-## Поддерживаемые платформы
+## Notes For GitHub
 
-| Платформа | Статус         |
-| --------- | -------------- |
-| YouTube   | Поддерживается |
-| Rutube    | Поддерживается |
-| VK Video  | Поддерживается |
+- `.env` is local and must not be committed.
+- Use `.env.example` for public configuration examples.
+- Downloaded videos and temporary files are ignored.
+- YouTube access in restricted networks depends on a working Zapret setup or proxy.
+- SSE is intentionally used instead of WebSocket because progress updates are one-way server-to-client events.
+- Before publishing changes, run:
 
-## Примечания
-
-- Проект использует Bun workspaces, команды запускаются из корня репозитория.
-- Для YouTube ссылка с `list`, `index`, `start_radio` нормализуется до одного видео.
-- Для VK Video ссылки `vkvideo.ru` нормализуются в формат `vk.com/video...`, который стабильно понимает `yt-dlp`.
-- Для Rutube используется отдельная обработка HLS/MPEG-TS, чтобы избежать audio-only MP4.
-- Для прогресса используется SSE, а не WebSocket: клиенту нужен односторонний поток статуса от сервера.
-- SQLite не используется, потому что история загрузок и пользовательские данные не сохраняются.
+```bash
+bun run build:web
+bun --filter web lint
+bunx tsc -p apps/server/tsconfig.json
+```

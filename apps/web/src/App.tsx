@@ -1,4 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import SitesPage from './app/(route)/(all-sites)/sites/page'
 import { SitePage } from './app/(route)/(site)/site/[name]/page'
 import MainPage from './app/(route)/page'
@@ -10,7 +12,7 @@ export function App() {
 	return (
 		<BrowserRouter>
 			<ScrollToTop />
-			<div className='min-h-screen bg-bg-primary flex flex-col'>
+			<div className='min-h-screen bg-bg-primary app-shell flex flex-col'>
 				<Header />
 
 				{/* Основной контент меняется в зависимости от URL */}
@@ -23,6 +25,18 @@ export function App() {
 				</main>
 				<Footer />
 			</div>
+			<ToastContainer
+				position='top-center'
+				autoClose={5000}
+				hideProgressBar={false}
+				newestOnTop
+				closeOnClick
+				pauseOnFocusLoss
+				draggable
+				pauseOnHover
+				theme='colored'
+				limit={4}
+			/>
 		</BrowserRouter>
 	)
 }

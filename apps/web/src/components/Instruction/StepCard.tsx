@@ -12,26 +12,24 @@ interface StepCardProps {
 export function StepCard({ step }: StepCardProps) {
 	return (
 		<motion.div
-			initial={{ opacity: 0, x: -20 }}
-			whileInView={{ opacity: 1, x: 0 }}
+			initial={{ opacity: 0, y: 14 }}
+			whileInView={{ opacity: 1, y: 0 }}
 			viewport={{ once: true }}
-			transition={{ delay: step.id * 0.1 }}
-			className='flex items-start gap-4 mb-8'
+			transition={{ delay: step.id * 0.04 }}
+			className='glass-panel rounded-2xl p-4'
 		>
-			<div className='flex items-center gap-4 flex-1'>
-				<div className='w-8 h-8 rounded-full bg-primary-blue flex items-center justify-center text-white font-bold text-sm shrink-0'>
-					{step.id}
-				</div>
-				<div className='flex-1'>
-					<h3 className='text-white font-medium mb-1'>
-						{step.title}
-					</h3>
-					<p className='text-text-secondary text-sm'>
+			<div className='flex items-start gap-4'>
+				<StepIllustration step={step.id} />
+				<div>
+					<div className='mb-2 inline-flex rounded-md bg-white/[0.05] px-2 py-1 text-xs font-semibold text-text-secondary'>
+						Шаг {step.id}
+					</div>
+					<h3 className='text-base font-semibold text-white'>{step.title}</h3>
+					<p className='mt-2 text-sm leading-6 text-text-secondary'>
 						{step.description}
 					</p>
 				</div>
 			</div>
-			<StepIllustration step={step.id} />
 		</motion.div>
 	)
 }
